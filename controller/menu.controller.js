@@ -1,8 +1,8 @@
 const pool = require("../database/index");
 const jwt = require("jsonwebtoken");
 
-const checkAdminVorstand = (user) =>
-  user?.userTypes?.some((role) => ["vorstand", "admin"].includes(role));
+const checkAdmin = (user) =>
+  user?.userTypes?.some((role) => ["admin"].includes(role));
 
 const menuController = {
   // JWT Auth
@@ -21,7 +21,7 @@ const menuController = {
   // ==================== Kategorien ====================
   createCategory: async (req, res) => {
     try {
-      if (!checkAdminVorstand(req.user))
+      if (!checkAdmin(req.user))
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
 
       const { name, description } = req.body;
@@ -50,7 +50,7 @@ const menuController = {
 
   updateCategory: async (req, res) => {
     try {
-      if (!checkAdminVorstand(req.user))
+      if (!checkAdmin(req.user))
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen aktualisieren." });
 
       const id = req.params.id;
@@ -72,7 +72,7 @@ const menuController = {
 
   deleteCategory: async (req, res) => {
     try {
-      if (!checkAdminVorstand(req.user))
+      if (!checkAdmin(req.user))
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen löschen." });
 
       const id = req.params.id;
@@ -90,7 +90,7 @@ const menuController = {
   // ==================== Gerichte ====================
   createItem: async (req, res) => {
     try {
-      if (!checkAdminVorstand(req.user))
+      if (!checkAdmin(req.user))
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
 
       const { category_id, number, title, description, price, extras, active_from, active_to } = req.body;
@@ -157,7 +157,7 @@ const menuController = {
 
   updateItem: async (req, res) => {
     try {
-      if (!checkAdminVorstand(req.user))
+      if (!checkAdmin(req.user))
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen aktualisieren." });
 
       const id = req.params.id;
@@ -195,7 +195,7 @@ const menuController = {
 
   deleteItem: async (req, res) => {
     try {
-      if (!checkAdminVorstand(req.user))
+      if (!checkAdmin(req.user))
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen löschen." });
 
       const id = req.params.id;
@@ -213,7 +213,7 @@ const menuController = {
   // ==================== Karten ====================
   createCard: async (req, res) => {
     try {
-      if (!checkAdminVorstand(req.user))
+      if (!checkAdmin(req.user))
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
 
       const { name, description, start_date, end_date, is_active } = req.body;

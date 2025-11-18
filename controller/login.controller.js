@@ -2,7 +2,7 @@ const pool = require("../database/index");
 const jwt = require("jsonwebtoken");
 const bcrypt = require('bcrypt');
 
-const adminController = {
+const loginController = {
 
   // 🔹 JWT Auth
   authenticateToken: (req, res, next) => {
@@ -45,4 +45,4 @@ const adminController = {
 
 };
 
-module.exports = adminController;
+module.exports = loginController;

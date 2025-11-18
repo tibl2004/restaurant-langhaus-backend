@@ -31,6 +31,8 @@ app.use('/api/anfrage', anfrageRouter);
 app.use('/api/logo', logoRouter);
 app.use('/api/admin', adminRouter);
 
+app.use("/uploads", express.static("uploads")); // damit Logos erreichbar sind
+
 
 // Fehlerbehandlung
 app.use((err, req, res, next) => {
