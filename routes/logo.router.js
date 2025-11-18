@@ -2,10 +2,10 @@ const express = require("express");
 const router = express.Router();
 const logoController = require("../controller/logo.controller");
 
-// GET Logo
+// GET /api/logo
 router.get("/", logoController.getLogo);
 
-// POST Logo hochladen
+// POST /api/logo
 router.post("/", logoController.uploadLogo);
 
 module.exports = router;
