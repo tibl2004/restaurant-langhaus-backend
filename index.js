@@ -21,12 +21,15 @@ const newsletterRouter = require('./routes/newsletter.router');
 const homeRouter = require('./routes/home.router');
 const anfrageRouter = require('./routes/anfrage.router');
 const logoRouter = require('./routes/logo.router');
+const adminRouter = require('./routes/admin.router');
+
 
 app.use('/api/login', loginRouter);
 app.use('/api/newsletter', newsletterRouter);
 app.use('/api/home', homeRouter);
 app.use('/api/anfrage', anfrageRouter);
 app.use('/api/logo', logoRouter);
+app.use('/api/admin', adminRouter);
 
 
 // Fehlerbehandlung
