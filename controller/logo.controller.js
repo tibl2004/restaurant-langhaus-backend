@@ -3,39 +3,36 @@ const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 
-// 🔹 Speicherort für Uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, "../uploads");
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    cb(null, "logo" + path.extname(file.originalname)); // logo.png, logo.jpg, ...
+    cb(null, "logo" + path.extname(file.originalname));
   },
 });
 
 const upload = multer({ storage });
 
 const logoController = {
-  // 🔹 Logo abrufen
   getLogo: async (req, res) => {
     try {
-      const [logoRows] = await pool.query("SELECT * FROM logos LIMIT 1");
-      const logo = logoRows.length > 0 ? logoRows[0].image : null;
+      const [rows] = await pool.query("SELECT * FROM logos LIMIT 1");
+      if (!rows.length) return res.status(404).json({ error: "Kein Logo gefunden." });
 
-      if (!logo) return res.status(404).json({ error: "Kein Logo gefunden." });
-
-      res.json({ logoUrl: logo }); // z.B. { "logoUrl": "uploads/logo.png" }
+      const logoPath = rows[0].image;
+      const fullUrl = `${req.protocol}://${req.get("host")}/${logoPath}`; // volle URL für Frontend
+      res.json({ logoUrl: fullUrl });
     } catch (err) {
-      console.error("Fehler beim Abrufen des Logos:", err);
+      console.error(err);
       res.status(500).json({ error: "Fehler beim Abrufen des Logos." });
     }
   },
 
-  // 🔹 Logo hochladen
   uploadLogo: [
-    upload.single("logo"), // Feldname "logo"
+    upload.single("logo"),
     async (req, res) => {
       try {
         if (!req.file) return res.status(400).json({ error: "Keine Datei hochgeladen." });
@@ -44,22 +41,19 @@ const logoController = {
 
         const [existing] = await pool.query("SELECT * FROM logos LIMIT 1");
         if (existing.length > 0) {
-          // Update
           await pool.query("UPDATE logos SET image = ? WHERE id = ?", [logoPath, existing[0].id]);
         } else {
-          // Insert
           await pool.query("INSERT INTO logos (image) VALUES (?)", [logoPath]);
         }
 
-        res.status(200).json({ message: "Logo erfolgreich hochgeladen.", logoUrl: logoPath });
+        const fullUrl = `${req.protocol}://${req.get("host")}/${logoPath}`;
+        res.status(200).json({ message: "Logo erfolgreich hochgeladen.", logoUrl: fullUrl });
       } catch (err) {
-        console.error("Fehler beim Hochladen des Logos:", err);
+        console.error(err);
         res.status(500).json({ error: "Fehler beim Hochladen des Logos." });
       }
     },
   ],
-
-  uploadMiddleware: upload, // falls extern verwendet
 };
 
 module.exports = logoController;
