@@ -3,7 +3,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const cors = require('cors');
 const dotenv = require('dotenv');
-
+const path = require("path"); // ✅ WICHTIG
 dotenv.config();
 
 const app = express();
