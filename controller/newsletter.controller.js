@@ -142,53 +142,67 @@ getAll: async (req, res) => {
 // --- Subscriber anmelden mit Bestätigungs-E-Mail ---
 subscribe: async (req, res) => {
   try {
-    const { vorname, nachname, email, newsletter_optin } = req.body;
-    if (!vorname || !nachname || !email) return res.status(400).json({ error: 'Vorname, Nachname und E-Mail sind erforderlich' });
-    if (newsletter_optin !== true) return res.status(400).json({ error: 'Newsletter-Opt-in muss bestätigt sein' });
+    const { vorname, nachname, email, newsletter_optin, typ } = req.body;
 
+    // Pflichtfelder prüfen
+    if (!vorname || !nachname || !email)
+      return res.status(400).json({ error: 'Vorname, Nachname und E-Mail sind erforderlich' });
+
+    if (newsletter_optin !== true)
+      return res.status(400).json({ error: 'Newsletter-Opt-in muss bestätigt sein' });
+
+    // 🔹 Gültige Typen definieren
+    const erlaubteTypen = ['elternteil', 'jugendlicher', 'verein', 'audiopädagoge', 'anderes'];
+    const gewaehlterTyp = erlaubteTypen.includes(typ?.toLowerCase())
+      ? typ.toLowerCase()
+      : 'anderes';
+
+    // Prüfen, ob E-Mail bereits vorhanden ist
     const [[existing]] = await pool.query('SELECT * FROM newsletter_subscribers WHERE email = ?', [email]);
     const unsubscribeToken = crypto.randomBytes(20).toString('hex');
 
     if (existing) {
-      // Reaktivierung
+      // Reaktivierung + Typ aktualisieren
       await pool.query(
-        'UPDATE newsletter_subscribers SET unsubscribed_at = NULL, subscribed_at = NOW(), unsubscribe_token = ?, vorname = ?, nachname = ?, newsletter_optin = 1 WHERE email = ?',
-        [unsubscribeToken, vorname, nachname, email]
+        'UPDATE newsletter_subscribers SET unsubscribed_at = NULL, subscribed_at = NOW(), unsubscribe_token = ?, vorname = ?, nachname = ?, typ = ?, newsletter_optin = 1 WHERE email = ?',
+        [unsubscribeToken, vorname, nachname, gewaehlterTyp, email]
       );
     } else {
       // Neue Anmeldung
       await pool.query(
-        'INSERT INTO newsletter_subscribers (vorname, nachname, email, unsubscribe_token, newsletter_optin, subscribed_at) VALUES (?, ?, ?, ?, 1, NOW())',
-        [vorname, nachname, email, unsubscribeToken]
+        'INSERT INTO newsletter_subscribers (vorname, nachname, email, unsubscribe_token, newsletter_optin, typ, subscribed_at) VALUES (?, ?, ?, ?, 1, ?, NOW())',
+        [vorname, nachname, email, unsubscribeToken, gewaehlterTyp]
       );
     }
- // Logo Base64 über API abrufen
- let logoBase64 = null;
- try {
-   const logoRes = await axios.get("https://jugehoerig-backend.onrender.com/api/logo");
-   if (logoRes.data.logoUrl) {
-     // Base64 Data-URL für Mail erstellen
-     logoBase64 = `data:image/png;base64,${logoRes.data.logoUrl}`;
-   }
- } catch (err) {
-   console.error("Logo konnte nicht geladen werden:", err.message);
- }
 
-    // --- HTML Bestätigungs-Mail ---
+    // 🔸 Logo laden (für E-Mail)
+    let logoBase64 = null;
+    try {
+      const logoRes = await axios.get("https://jugehoerig-backend.onrender.com/api/logo");
+      if (logoRes.data.logoUrl) {
+        logoBase64 = `data:image/png;base64,${logoRes.data.logoUrl}`;
+      }
+    } catch (err) {
+      console.error("Logo konnte nicht geladen werden:", err.message);
+    }
+
+    // 🔸 HTML-Mail erstellen
     const html = `
       <div style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
         <table align="center" width="600" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
           <tr>
             <td align="center" style="background-color: #F59422; padding: 20px;">
-            ${logoBase64 ? `<div style="text-align:center; margin-bottom:20px;">
-            <img src="${logoBase64}" alt="Logo" style="max-width:200px;" />
-          </div>` : ''}            </td>
+              ${logoBase64 ? `<div style="text-align:center; margin-bottom:20px;">
+                <img src="${logoBase64}" alt="Logo" style="max-width:200px;" />
+              </div>` : ''}
+            </td>
           </tr>
           <tr>
             <td style="padding: 20px;">
               <h2 style="color:#F59422;">Willkommen im Newsletter!</h2>
               <p>Hallo ${vorname} ${nachname},</p>
-              <p>vielen Dank für deine Anmeldung zu unserem Newsletter. Wir freuen uns, dich an Bord zu haben!</p>
+              <p>vielen Dank für deine Anmeldung zu unserem Newsletter als <strong>${gewaehlterTyp.charAt(0).toUpperCase() + gewaehlterTyp.slice(1)}</strong>.</p>
+              <p>Wir freuen uns, dich an Bord zu haben!</p>
               <p>Falls du den Newsletter irgendwann nicht mehr erhalten möchtest, kannst du dich jederzeit abmelden:</p>
               <div style="text-align: center; margin: 20px 0;">
                 <a href="https://jugehoerig-backend.onrender.com/api/newsletter/unsubscribe?token=${unsubscribeToken}" 
@@ -201,20 +215,26 @@ subscribe: async (req, res) => {
       </div>
     `;
 
-    // Mail senden
+    // 🔸 Mail senden
     await transporter.sendMail({
-      from: `"Jugehörig" <${MAIL_USER}>`,
+      from: `"Eagle Eye Treff" <${MAIL_USER}>`,
       to: email,
       subject: 'Willkommen zu unserem Newsletter!',
       html,
     });
 
-    res.json({ message: 'Newsletter-Anmeldung erfolgreich. Eine Bestätigungs-Mail wurde gesendet.' });
+    // Erfolgreiche Antwort
+    res.json({
+      message: 'Newsletter-Anmeldung erfolgreich. Eine Bestätigungs-Mail wurde gesendet.',
+      typ: gewaehlterTyp
+    });
+
   } catch (error) {
     console.error('Fehler beim Newsletter-Anmelden:', error);
     res.status(500).json({ error: 'Serverfehler bei der Anmeldung' });
   }
 },
+
 
 
 unsubscribe: async (req, res) => {

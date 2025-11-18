@@ -16,34 +16,17 @@ app.use(cors());
 app.use(express.urlencoded({ limit: "150mb", extended: true }));
 app.use(express.json({ limit: "150mb" }));
 
-const linksRouter = require('./routes/links.router');
 const loginRouter = require('./routes/login.router');
-const vorstandRouter = require('./routes/vorstand.router');
-const youtubelinkRouter = require('./routes/youtubelink.router');
-const eventRouter = require('./routes/event.router');
 const newsletterRouter = require('./routes/newsletter.router');
-const impressumRouter = require('./routes/impressum.router');
 const homeRouter = require('./routes/home.router');
-const blogsRouter = require('./routes/blogs.router');
-const spendenRouter = require('./routes/spenden.router');
 const anfrageRouter = require('./routes/anfrage.router');
-const postkontaktRouter = require('./routes/postkontakt.router');
-
 const logoRouter = require('./routes/logo.router');
 
-app.use('/api/links', linksRouter);
 app.use('/api/login', loginRouter);
-app.use('/api/vorstand', vorstandRouter);
-app.use('/api/youtubelink', youtubelinkRouter);
-app.use('/api/event', eventRouter);
 app.use('/api/newsletter', newsletterRouter);
-app.use('/api/impressum', impressumRouter);
 app.use('/api/home', homeRouter);
-app.use('/api/blogs', blogsRouter);
-app.use('/api/spenden', spendenRouter);
 app.use('/api/anfrage', anfrageRouter);
 app.use('/api/logo', logoRouter);
-app.use('/api/postkontakt', postkontaktRouter);
 
 
 // Fehlerbehandlung
