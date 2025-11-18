@@ -31,8 +31,9 @@ app.use('/api/anfrage', anfrageRouter);
 app.use('/api/logo', logoRouter);
 app.use('/api/admin', adminRouter);
 
-// Statische Dateien für Uploads
-app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
+
+// Statische Dateien aus /uploads verfügbar machen
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Fehlerbehandlung
 app.use((err, req, res, next) => {
