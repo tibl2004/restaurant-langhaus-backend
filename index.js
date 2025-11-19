@@ -22,6 +22,7 @@ const homeRouter = require('./routes/home.router');
 const anfrageRouter = require('./routes/anfrage.router');
 const logoRouter = require('./routes/logo.router');
 const adminRouter = require('./routes/admin.router');
+const galerieRouter = require('./routes/galerie.router');
 
 
 app.use('/api/login', loginRouter);
@@ -30,6 +31,7 @@ app.use('/api/home', homeRouter);
 app.use('/api/anfrage', anfrageRouter);
 app.use('/api/logo', logoRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/galerie', galerieRouter);
 
 
 // Statische Dateien aus /uploads verfügbar machen
