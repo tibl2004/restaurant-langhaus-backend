@@ -12,7 +12,14 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    cb(null, "home_" + Date.now() + path.extname(file.originalname));
+    cb(
+      null,
+      "home_" +
+        Date.now() +
+        "_" +
+        Math.random().toString(36).substring(7) +
+        path.extname(file.originalname)
+    );
   },
 });
 
@@ -44,7 +51,9 @@ const homeController = {
       if (!rows.length) return res.status(404).json({ error: "Kein Home-Inhalt gefunden." });
 
       const content = rows[0];
-      const fullUrl = content.bild ? `${req.protocol}://${req.get("host")}/${content.bild}` : null;
+      const fullUrl = content.bild
+        ? `${req.protocol}://${req.get("host")}/${content.bild}`
+        : null;
 
       res.status(200).json({
         id: content.id,
@@ -76,10 +85,12 @@ const homeController = {
         // Prüfen, ob bereits ein Eintrag existiert
         const [existing] = await pool.query("SELECT id FROM home_content LIMIT 1");
         if (existing.length > 0) {
-          return res.status(400).json({ error: "Home-Content existiert bereits. Bitte UPDATE verwenden." });
+          return res
+            .status(400)
+            .json({ error: "Home-Content existiert bereits. Bitte UPDATE verwenden." });
         }
 
-        const bildPath = "uploads/" + req.file.filename;
+        const bildPath = "uploads/home/" + req.file.filename;
         await pool.query(
           "INSERT INTO home_content (bild, willkommen_text, willkommen_link) VALUES (?, ?, ?)",
           [bildPath, willkommenText, willkommenLink]
@@ -105,9 +116,6 @@ const homeController = {
         }
 
         const { willkommenText, willkommenLink } = req.body;
-        if (!req.file && (!willkommenText || !willkommenLink)) {
-          return res.status(400).json({ error: "Mindestens ein Feld muss aktualisiert werden." });
-        }
 
         // Prüfen, ob ein Eintrag existiert
         const [existing] = await pool.query("SELECT id, bild FROM home_content LIMIT 1");
@@ -116,11 +124,14 @@ const homeController = {
         }
 
         let bildPath = existing[0].bild;
-        if (req.file) bildPath = "uploads/" + req.file.filename;
+        if (req.file) bildPath = "uploads/home/" + req.file.filename;
+
+        const updatedText = willkommenText || existing[0].willkommen_text;
+        const updatedLink = willkommenLink || existing[0].willkommen_link;
 
         await pool.query(
           "UPDATE home_content SET bild = ?, willkommen_text = ?, willkommen_link = ?, aktualisiert_am = NOW() WHERE id = ?",
-          [bildPath, willkommenText, willkommenLink, existing[0].id]
+          [bildPath, updatedText, updatedLink, existing[0].id]
         );
 
         const fullUrl = `${req.protocol}://${req.get("host")}/${bildPath}`;
@@ -131,6 +142,29 @@ const homeController = {
       }
     },
   ],
+
+  // 🔹 Optional: Home Content löschen
+  deleteHomeContent: async (req, res) => {
+    try {
+      const { userTypes } = req.user;
+      if (!userTypes || !userTypes.includes("vorstand")) {
+        return res.status(403).json({ error: "Nur Vorstände dürfen Inhalte löschen." });
+      }
+
+      const [existing] = await pool.query("SELECT id, bild FROM home_content LIMIT 1");
+      if (!existing.length) return res.status(404).json({ error: "Kein Home-Content vorhanden." });
+
+      const fullPath = path.join(__dirname, "../", existing[0].bild);
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+
+      await pool.query("DELETE FROM home_content WHERE id = ?", [existing[0].id]);
+
+      res.status(200).json({ message: "Home-Content gelöscht." });
+    } catch (err) {
+      console.error("Fehler beim Löschen des Home-Contents:", err);
+      res.status(500).json({ error: "Fehler beim Löschen des Home-Contents." });
+    }
+  },
 
   uploadMiddleware: upload,
 };
