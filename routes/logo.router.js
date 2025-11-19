@@ -2,10 +2,13 @@ const express = require("express");
 const router = express.Router();
 const logoController = require("../controller/logo.controller");
 
-// GET /api/logo
-router.get("/", logoController.getLogo);
+// Alle Logos abrufen
+router.get("/all", logoController.getAllLogos);
 
-// POST /api/logo
+// Aktuelles Logo abrufen
+router.get("/", logoController.getCurrentLogo);
+
+// Neues Logo hochladen
 router.post("/", logoController.uploadLogo);
 
 module.exports = router;
