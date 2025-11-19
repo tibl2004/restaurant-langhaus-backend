@@ -10,7 +10,14 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-app.use(cors());
+// 🔹 CORS konfigurieren
+const corsOptions = {
+    origin: "http://localhost:3000", // React Frontend
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true, // falls Cookies oder Auth notwendig
+};
+app.use(cors(corsOptions));
 
 // Limits hochsetzen, damit große Base64-Bilder durchgehen
 app.use(express.urlencoded({ limit: "150mb", extended: true }));
@@ -24,7 +31,6 @@ const logoRouter = require('./routes/logo.router');
 const adminRouter = require('./routes/admin.router');
 const galerieRouter = require('./routes/galerie.router');
 
-
 app.use('/api/login', loginRouter);
 app.use('/api/newsletter', newsletterRouter);
 app.use('/api/home', homeRouter);
@@ -33,9 +39,11 @@ app.use('/api/logo', logoRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/galerie', galerieRouter);
 
-
 // Statische Dateien aus /uploads verfügbar machen
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// 🔹 Preflight-Anfragen für CORS
+app.options('*', cors(corsOptions));
 
 // Fehlerbehandlung
 app.use((err, req, res, next) => {
