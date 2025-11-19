@@ -5,7 +5,7 @@ const axios = require("axios");
 
 
 // ------------------ Mailer Setup ------------------
-const MAIL_USER = 'no-reply.jugehoerig@gmx.ch';
+const MAIL_USER = 'nix@gmx.ch';
 const MAIL_PASS = 'jugehoerig!1234'; // GMX-App-Passwort
 
 const transporter = nodemailer.createTransport({
