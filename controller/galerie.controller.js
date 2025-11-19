@@ -58,7 +58,7 @@ const galerieController = {
     async (req, res) => {
       try {
         const { userTypes } = req.user;
-        if (!userTypes || !userTypes.includes("vorstand")) {
+        if (!userTypes || !userTypes.includes("admin")) {
           return res.status(403).json({ error: "Nur Vorstände dürfen Bilder hochladen." });
         }
 
