@@ -210,28 +210,30 @@ const menuController = {
     }
   },
 
-  // ==================== Karten ====================
   createCard: async (req, res) => {
     try {
       if (!checkAdmin(req.user))
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
-
-      const { name, description, start_date, end_date, is_active } = req.body;
+  
+      const { name, description, start_date, end_date, is_active, unendlich } = req.body;
       if (!name) return res.status(400).json({ error: "Name der Karte ist Pflicht." });
-
+  
+      // Wenn unendlich = true, wird end_date auf NULL gesetzt
+      const finalEndDate = unendlich ? null : end_date || null;
+  
       await pool.query(
         `INSERT INTO cards (name, description, start_date, end_date, is_active)
          VALUES (?, ?, ?, ?, ?)`,
-        [name, description || null, start_date || null, end_date || null, is_active ? 1 : 0]
+        [name, description || null, start_date || null, finalEndDate, is_active ? 1 : 0]
       );
-
+  
       res.status(201).json({ message: "Karte erstellt." });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Erstellen der Karte." });
     }
   },
-
+  
   getAllCards: async (req, res) => {
     try {
       const [rows] = await pool.query(
