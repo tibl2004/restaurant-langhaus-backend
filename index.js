@@ -29,6 +29,8 @@ const anfrageRouter = require('./routes/anfrage.router');
 const logoRouter = require('./routes/logo.router');
 const adminRouter = require('./routes/admin.router');
 const galerieRouter = require('./routes/galerie.router');
+const oeffnungszeitenRouter = require('./routes/oeffnungszeiten.router');
+
 
 // 🔹 Routen zuweisen
 app.use('/api/login', loginRouter);
@@ -38,6 +40,7 @@ app.use('/api/anfrage', anfrageRouter);
 app.use('/api/logo', logoRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/galerie', galerieRouter);
+app.use('/api/oeffnungszeiten', oeffnungszeitenRouter);
 
 // 🔹 Preflight für alle Anfragen (optional, aber sicher)
 app.options('*', cors());
