@@ -16,59 +16,73 @@ const oeffnungszeitenController = {
     });
   },
 
-  // 🔹 Öffnungszeiten abrufen + zusammenfassen
+
   getOeffnungszeiten: async (req, res) => {
     try {
       const [rows] = await pool.query(
         "SELECT * FROM oeffnungszeiten ORDER BY FIELD(wochentag,'Mo','Di','Mi','Do','Fr','Sa','So'), kategorie, von"
       );
-
-      const grouped = [];
-      let prev = null;
-
+  
+      // Zwischenspeicher: { kategorie -> { wochentag -> [ {von,bis} ] } }
+      const tmp = {};
+  
       for (const row of rows) {
         const cat = row.kategorie || "";
-        const von = row.von;
-        const bis = row.bis;
-
-        // Falls geschlossen → zusammenfassen
-        const closed = !von && !bis;
-
-        if (
-          prev &&
-          prev.kategorie === cat &&
-          prev.closed === closed &&
-          prev.von === von &&
-          prev.bis === bis
-        ) {
-          prev.wochentage.push(row.wochentag);
-        } else {
-          prev = {
-            id: row.id,
-            kategorie: cat,
-            closed,
-            von,
-            bis,
-            wochentage: [row.wochentag]
-          };
-          grouped.push(prev);
+        const wt = row.wochentag;
+  
+        if (!tmp[cat]) tmp[cat] = {};
+        if (!tmp[cat][wt]) tmp[cat][wt] = [];
+  
+        // Falls geschlossen (keine Zeit), NICHT Zeiteintrag hinzufügen
+        if (row.von && row.bis) {
+          tmp[cat][wt].push({ von: row.von, bis: row.bis });
         }
       }
-
-      // Ausgabe schöner machen
-      const result = grouped.map(g => ({
-        kategorie: g.kategorie || null,
-        wochentage: g.wochentage.join(", "),
-        geschlossen: g.closed,
-        zeiten: g.closed ? null : `${g.von} – ${g.bis}`
-      }));
-
-      res.status(200).json(result);
+  
+      // Jetzt erzeugen wir eine Liste für die Ausgabe
+      const output = [];
+  
+      for (const cat of Object.keys(tmp)) {
+        const tage = tmp[cat];
+  
+        // Wir müssen gleiche Zeitmuster zusammenfassen
+        const patternGroups = {};
+  
+        for (const wt of Object.keys(tage)) {
+          const times = tage[wt];
+  
+          // geschlossen → Kennzeichnung
+          const isClosed = times.length === 0;
+  
+          // Muster erzeugen: z.B. "09:00-12:00 | 13:00-18:00"
+          const pattern = isClosed
+            ? "geschlossen"
+            : times.map(t => `${t.von}-${t.bis}`).join(" | ");
+  
+          if (!patternGroups[pattern]) patternGroups[pattern] = [];
+          patternGroups[pattern].push(wt);
+        }
+  
+        // Ausgabe formatieren
+        for (const pattern of Object.keys(patternGroups)) {
+          const closed = pattern === "geschlossen";
+  
+          output.push({
+            kategorie: cat || null,
+            wochentage: patternGroups[pattern].join(", "),
+            geschlossen: closed,
+            zeiten: closed ? null : pattern.replace(/\-/g, " – ")
+          });
+        }
+      }
+  
+      res.status(200).json(output);
+  
     } catch (err) {
       console.error("Fehler beim Abrufen der Öffnungszeiten:", err);
       res.status(500).json({ error: "Fehler beim Abrufen der Öffnungszeiten." });
     }
-  },
+  },  
 
   // 🔹 Zeitblock hinzufügen
   addZeitblock: async (req, res) => {
