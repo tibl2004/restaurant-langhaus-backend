@@ -42,7 +42,6 @@ const oeffnungszeitenController = {
   
       const output = [];
   
-      // Hilfsfunktion: Tage zusammenfassen zu Bereichen (Mo–Sa)
       const compressDays = (daysArray) => {
         const sorted = daysArray.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   
@@ -52,26 +51,18 @@ const oeffnungszeitenController = {
   
         for (let i = 1; i < sorted.length; i++) {
           const curr = sorted[i];
-          // Tage sind hintereinander (z.B. Mo -> Di)
           if (order.indexOf(curr) === order.indexOf(prev) + 1) {
             prev = curr;
             continue;
           }
-  
-          // Bereich abschließen
-          ranges.push(start === prev ? start : `${start}–${prev}`);
-  
+          ranges.push(start === prev ? start : `${start} – ${prev}`);
           start = curr;
           prev = curr;
         }
-  
-        // letzten Bereich hinzufügen
-        ranges.push(start === prev ? start : `${start}–${prev}`);
-  
-        return ranges.join(", ");
+        ranges.push(start === prev ? start : `${start} – ${prev}`);
+        return ranges;
       };
   
-      // Für jede Kategorie Zeitmuster gruppieren
       for (const cat of Object.keys(tmp)) {
         const tage = tmp[cat];
         const patternGroups = {};
@@ -81,21 +72,27 @@ const oeffnungszeitenController = {
           const isClosed = times.length === 0;
   
           const pattern = isClosed
-            ? "geschlossen"
-            : times.map(t => `${t.von}-${t.bis}`).join(" | ");
+            ? ["geschlossen"]
+            : times.map(t => `${t.von} – ${t.bis}`);
   
-          if (!patternGroups[pattern]) patternGroups[pattern] = [];
-          patternGroups[pattern].push(wt);
+          const key = pattern.join("|"); // Gruppierung nach identischen Zeiten
+          if (!patternGroups[key]) patternGroups[key] = [];
+          patternGroups[key].push({ tag: wt, zeiten: pattern, geschlossen: isClosed });
         }
   
-        for (const pattern of Object.keys(patternGroups)) {
-          const closed = pattern === "geschlossen";
+        for (const groupKey of Object.keys(patternGroups)) {
+          const group = patternGroups[groupKey];
+  
+          // Alle Tage im Bereich zusammenfassen
+          const tageListe = group.map(g => g.tag);
+          const zeiten = group[0].zeiten;
+          const geschlossen = group[0].geschlossen;
   
           output.push({
             kategorie: cat || null,
-            wochentage: compressDays(patternGroups[pattern]), // ⭐ TAGBEREICHE!!
-            geschlossen: closed,
-            zeiten: closed ? null : pattern.replace(/\-/g, " – ")
+            wochentage: compressDays(tageListe), // Array von Tag-Bereichen
+            geschlossen,
+            zeiten // Array von Zeiten oder ["geschlossen"]
           });
         }
       }
