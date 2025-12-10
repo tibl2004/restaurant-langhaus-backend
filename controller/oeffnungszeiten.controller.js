@@ -23,6 +23,8 @@ const oeffnungszeitenController = {
         "SELECT * FROM oeffnungszeiten ORDER BY FIELD(wochentag,'Mo','Di','Mi','Do','Fr','Sa','So'), kategorie, von"
       );
   
+      const order = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+  
       // Zwischenspeicher: { kategorie -> { wochentag -> [ {von,bis} ] } }
       const tmp = {};
   
@@ -33,28 +35,51 @@ const oeffnungszeitenController = {
         if (!tmp[cat]) tmp[cat] = {};
         if (!tmp[cat][wt]) tmp[cat][wt] = [];
   
-        // Falls geschlossen (keine Zeit), NICHT Zeiteintrag hinzufügen
         if (row.von && row.bis) {
           tmp[cat][wt].push({ von: row.von, bis: row.bis });
         }
       }
   
-      // Jetzt erzeugen wir eine Liste für die Ausgabe
       const output = [];
   
+      // Hilfsfunktion: Tage zusammenfassen zu Bereichen (Mo–Sa)
+      const compressDays = (daysArray) => {
+        const sorted = daysArray.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  
+        const ranges = [];
+        let start = sorted[0];
+        let prev = sorted[0];
+  
+        for (let i = 1; i < sorted.length; i++) {
+          const curr = sorted[i];
+          // Tage sind hintereinander (z.B. Mo -> Di)
+          if (order.indexOf(curr) === order.indexOf(prev) + 1) {
+            prev = curr;
+            continue;
+          }
+  
+          // Bereich abschließen
+          ranges.push(start === prev ? start : `${start}–${prev}`);
+  
+          start = curr;
+          prev = curr;
+        }
+  
+        // letzten Bereich hinzufügen
+        ranges.push(start === prev ? start : `${start}–${prev}`);
+  
+        return ranges.join(", ");
+      };
+  
+      // Für jede Kategorie Zeitmuster gruppieren
       for (const cat of Object.keys(tmp)) {
         const tage = tmp[cat];
-  
-        // Wir müssen gleiche Zeitmuster zusammenfassen
         const patternGroups = {};
   
         for (const wt of Object.keys(tage)) {
           const times = tage[wt];
-  
-          // geschlossen → Kennzeichnung
           const isClosed = times.length === 0;
   
-          // Muster erzeugen: z.B. "09:00-12:00 | 13:00-18:00"
           const pattern = isClosed
             ? "geschlossen"
             : times.map(t => `${t.von}-${t.bis}`).join(" | ");
@@ -63,13 +88,12 @@ const oeffnungszeitenController = {
           patternGroups[pattern].push(wt);
         }
   
-        // Ausgabe formatieren
         for (const pattern of Object.keys(patternGroups)) {
           const closed = pattern === "geschlossen";
   
           output.push({
             kategorie: cat || null,
-            wochentage: patternGroups[pattern].join(", "),
+            wochentage: compressDays(patternGroups[pattern]), // ⭐ TAGBEREICHE!!
             geschlossen: closed,
             zeiten: closed ? null : pattern.replace(/\-/g, " – ")
           });
@@ -82,7 +106,8 @@ const oeffnungszeitenController = {
       console.error("Fehler beim Abrufen der Öffnungszeiten:", err);
       res.status(500).json({ error: "Fehler beim Abrufen der Öffnungszeiten." });
     }
-  },  
+  },
+  
 
   // 🔹 Zeitblock hinzufügen
   addZeitblock: async (req, res) => {
