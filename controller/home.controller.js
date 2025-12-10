@@ -104,7 +104,6 @@ const homeController = {
     },
   ],
 
-  // 🔹 Home Content aktualisieren
   updateHomeContent: [
     upload.single("bild"),
     async (req, res) => {
@@ -116,6 +115,7 @@ const homeController = {
   
         const { willkommenText, willkommenLink } = req.body;
   
+        // Existierenden Content abrufen
         const [existing] = await pool.query(
           "SELECT id, bild, willkommen_text, willkommen_link FROM home_content LIMIT 1"
         );
@@ -126,7 +126,13 @@ const homeController = {
         const old = existing[0];
   
         let bildPath = old.bild;
-        if (req.file) bildPath = "uploads/home/" + req.file.filename;
+  
+        // Neues Bild hochgeladen → alten Pfad löschen
+        if (req.file) {
+          bildPath = "uploads/home/" + req.file.filename;
+          const oldFullPath = path.join(__dirname, "../", old.bild);
+          if (fs.existsSync(oldFullPath)) fs.unlinkSync(oldFullPath);
+        }
   
         await pool.query(
           "UPDATE home_content SET bild = ?, willkommen_text = ?, willkommen_link = ?, aktualisiert_am = NOW() WHERE id = ?",
@@ -139,8 +145,10 @@ const homeController = {
         );
   
         res.status(200).json({
-          message: "Home-Content aktualisiert.",
+          message: "Home-Content erfolgreich aktualisiert.",
           bild: `${req.protocol}://${req.get("host")}/${bildPath}`,
+          willkommenText: willkommenText || old.willkommen_text,
+          willkommenLink: willkommenLink || old.willkommen_link,
         });
       } catch (err) {
         console.error("Fehler beim Aktualisieren:", err);
@@ -148,6 +156,7 @@ const homeController = {
       }
     },
   ],
+  
   
 
   // 🔹 Home Content löschen
