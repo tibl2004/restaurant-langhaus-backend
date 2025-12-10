@@ -42,6 +42,7 @@ const oeffnungszeitenController = {
   
       const output = [];
   
+      // Hilfsfunktion: Tage zusammenfassen zu Bereichen, liefert ARRAY von Bereichen
       const compressDays = (daysArray) => {
         const sorted = daysArray.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   
@@ -60,9 +61,10 @@ const oeffnungszeitenController = {
           prev = curr;
         }
         ranges.push(start === prev ? start : `${start} – ${prev}`);
-        return ranges;
+        return ranges; // ⚡ ARRAY
       };
   
+      // Für jede Kategorie: gleiche Zeitmuster gruppieren
       for (const cat of Object.keys(tmp)) {
         const tage = tmp[cat];
         const patternGroups = {};
@@ -103,9 +105,7 @@ const oeffnungszeitenController = {
       console.error("Fehler beim Abrufen der Öffnungszeiten:", err);
       res.status(500).json({ error: "Fehler beim Abrufen der Öffnungszeiten." });
     }
-  },
-  
-
+  },  
   // 🔹 Zeitblock hinzufügen
   addZeitblock: async (req, res) => {
     try {
