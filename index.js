@@ -3,23 +3,26 @@ const http = require('http');
 const WebSocket = require('ws');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const path = require("path"); // ✅ WICHTIG
+const path = require("path");
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
+// ⭐ GANZ WICHTIG: Direkt nach app = express();
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 // 🔹 CORS konfigurieren
 const corsOptions = {
-    origin: "http://localhost:3000", // React Frontend
+    origin: "http://localhost:3000",
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true, // falls Cookies oder Auth notwendig
+    credentials: true,
 };
 app.use(cors(corsOptions));
 
-// Limits hochsetzen, damit große Base64-Bilder durchgehen
+// Limits hochsetzen
 app.use(express.urlencoded({ limit: "150mb", extended: true }));
 app.use(express.json({ limit: "150mb" }));
 
@@ -39,13 +42,10 @@ app.use('/api/logo', logoRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/galerie', galerieRouter);
 
-// Statische Dateien aus /uploads verfügbar machen
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// 🔹 Preflight-Anfragen für CORS
+// Preflight
 app.options('*', cors(corsOptions));
 
-// Fehlerbehandlung
+// Error Handling
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).send('Etwas ist schiefgelaufen!');
