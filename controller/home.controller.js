@@ -110,23 +110,24 @@ const homeController = {
     async (req, res) => {
       try {
         const { userTypes } = req.user;
-        if (!userTypes?.includes("vorstand"))
-          return res.status(403).json({ error: "Nur Vorstände dürfen aktualisieren." });
-
+        // Admins und Vorstände dürfen aktualisieren
+        if (!userTypes?.includes("vorstand") && !userTypes?.includes("admin"))
+          return res.status(403).json({ error: "Nur Admins oder Vorstände dürfen aktualisieren." });
+  
         const { willkommenText, willkommenLink } = req.body;
-
+  
         const [existing] = await pool.query(
           "SELECT id, bild, willkommen_text, willkommen_link FROM home_content LIMIT 1"
         );
-
+  
         if (!existing.length)
           return res.status(400).json({ error: "Kein Content vorhanden. Bitte CREATE verwenden." });
-
+  
         const old = existing[0];
-
+  
         let bildPath = old.bild;
         if (req.file) bildPath = "uploads/home/" + req.file.filename;
-
+  
         await pool.query(
           "UPDATE home_content SET bild = ?, willkommen_text = ?, willkommen_link = ?, aktualisiert_am = NOW() WHERE id = ?",
           [
@@ -136,7 +137,7 @@ const homeController = {
             old.id,
           ]
         );
-
+  
         res.status(200).json({
           message: "Home-Content aktualisiert.",
           bild: `${req.protocol}://${req.get("host")}/${bildPath}`,
@@ -147,6 +148,7 @@ const homeController = {
       }
     },
   ],
+  
 
   // 🔹 Home Content löschen
   deleteHomeContent: async (req, res) => {
