@@ -86,7 +86,35 @@ const menuController = {
       res.status(500).json({ error: "Fehler beim Löschen der Kategorie." });
     }
   },
+// PUT /api/menu/items/reorder/:categoryId
+reorderItems: async (req, res) => {
+  try {
+    if (!checkAdmin(req.user))
+      return res.status(403).json({ error: "Nur Vorstände/Admins dürfen aktualisieren." });
 
+    const categoryId = req.params.categoryId;
+    const { orderedIds } = req.body; // Array der Menü-IDs in gewünschter Reihenfolge
+
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0)
+      return res.status(400).json({ error: "Keine IDs übergeben." });
+
+    // Reihenfolge automatisch fortlaufend setzen
+    for (let i = 0; i < orderedIds.length; i++) {
+      const number = i + 1; // fortlaufend 1,2,3...
+      await pool.query("UPDATE menu_items SET number=? WHERE id=? AND category_id=?", [
+        number,
+        orderedIds[i],
+        categoryId
+      ]);
+    }
+
+    res.json({ message: "Gerichte neu sortiert." });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Fehler beim Sortieren der Gerichte." });
+  }
+},
   // ==================== Gerichte ====================
   createItem: async (req, res) => {
     try {
