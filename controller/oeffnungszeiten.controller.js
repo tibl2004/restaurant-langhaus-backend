@@ -25,6 +25,9 @@ const oeffnungszeitenController = {
   
       const order = ["Mo","Di","Mi","Do","Fr","Sa","So"];
   
+      // Sekunden entfernen: HH:MM:SS -> HH:MM
+      const fmt = (s) => s ? s.slice(0,5) : s;
+  
       // Zwischenspeicher: { kategorie -> { wochentag -> [ {von,bis} ] } }
       const tmp = {};
   
@@ -36,13 +39,13 @@ const oeffnungszeitenController = {
         if (!tmp[cat][wt]) tmp[cat][wt] = [];
   
         if (row.von && row.bis) {
-          tmp[cat][wt].push({ von: row.von, bis: row.bis });
+          tmp[cat][wt].push({ von: fmt(row.von), bis: fmt(row.bis) });
         }
       }
   
       const output = [];
   
-      // Hilfsfunktion: Tage zusammenfassen zu Bereichen (Mo–Sa)
+      // Tage zusammenfassen zu Bereichen (Mo–Sa)
       const compressDays = (daysArray) => {
         const sorted = daysArray.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   
@@ -61,7 +64,7 @@ const oeffnungszeitenController = {
           prev = curr;
         }
         ranges.push(start === prev ? start : `${start} – ${prev}`);
-        return ranges; // Array von Bereichen
+        return ranges;
       };
   
       for (const cat of Object.keys(tmp)) {
@@ -74,13 +77,13 @@ const oeffnungszeitenController = {
           const isClosed = times.length === 0;
           const pattern = isClosed
             ? "geschlossen"
-            : times.map(t => `${t.von} – ${t.bis}`).join("|"); // Key zur Gruppierung
+            : times.map(t => `${t.von} – ${t.bis}`).join("|"); // Sekunden schon entfernt
   
           if (!patternGroups[pattern]) patternGroups[pattern] = [];
           patternGroups[pattern].push(wt);
         }
   
-        // Jetzt die gruppierten Tage mit identischen Zeiten ausgeben
+        // Gruppierte Tage
         for (const pattern of Object.keys(patternGroups)) {
           const days = patternGroups[pattern];
           const geschlossen = pattern === "geschlossen";
@@ -88,7 +91,7 @@ const oeffnungszeitenController = {
   
           output.push({
             kategorie: cat || null,
-            wochentage: compressDays(days), // Array von Tag-Bereichen
+            wochentage: compressDays(days),
             geschlossen,
             zeiten
           });
@@ -101,7 +104,8 @@ const oeffnungszeitenController = {
       console.error("Fehler beim Abrufen der Öffnungszeiten:", err);
       res.status(500).json({ error: "Fehler beim Abrufen der Öffnungszeiten." });
     }
-  },  
+  },
+  
   // 🔹 Zeitblock hinzufügen
   addZeitblock: async (req, res) => {
     try {
