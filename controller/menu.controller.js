@@ -1,11 +1,11 @@
 const pool = require("../database/index");
 const jwt = require("jsonwebtoken");
-const generateCardPDF = require("../utils/generateCardPDF.js"); // Pfad zum PDF-Generator
+const generateCardPDF = require("../utils/generateCardPDF.js");
 const fs = require("fs");
 const path = require("path");
 
-const checkAdmin = (user) =>
-  user?.userTypes?.some((role) => ["admin"].includes(role));
+// Admin-Check
+const checkAdmin = (user) => user?.userTypes?.some((role) => ["admin"].includes(role));
 
 const menuController = {
   // ==================== JWT Auth ====================
@@ -38,7 +38,6 @@ const menuController = {
         [name, description || null]
       );
 
-      // Optional: Kategorie direkt zur Karte hinzufügen
       if (card_id) {
         await pool.query("INSERT INTO card_categories (card_id, category_id) VALUES (?, ?)", [
           card_id,
@@ -46,9 +45,7 @@ const menuController = {
         ]);
       }
 
-      // PDF aktualisieren
       await menuController.generateCardPDF(card_id);
-
       res.status(201).json({ message: "Kategorie erstellt und PDF aktualisiert." });
     } catch (err) {
       console.error(err);
@@ -86,9 +83,7 @@ const menuController = {
         ]
       );
 
-      // PDF aktualisieren
       await menuController.generateCardPDF(card_id);
-
       res.json({ message: "Kategorie aktualisiert und PDF gespeichert." });
     } catch (err) {
       console.error(err);
@@ -102,16 +97,13 @@ const menuController = {
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen löschen." });
 
       const id = req.params.id;
-      const { card_id } = req.body; // Karte optional übergeben
+      const { card_id } = req.body;
 
       const [existing] = await pool.query("SELECT * FROM categories WHERE id=?", [id]);
       if (existing.length === 0) return res.status(404).json({ error: "Kategorie nicht gefunden." });
 
       await pool.query("DELETE FROM categories WHERE id=?", [id]);
-
-      // PDF aktualisieren
       await menuController.generateCardPDF(card_id);
-
       res.json({ message: "Kategorie gelöscht und PDF gespeichert." });
     } catch (err) {
       console.error(err);
@@ -126,9 +118,10 @@ const menuController = {
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
 
       const { category_id, number, title, description, price, extras, active_from, active_to, card_id } = req.body;
-      if (!category_id || !title || !price) return res.status(400).json({ error: "Kategorie, Titel und Preis sind Pflicht." });
+      if (!category_id || !title || !price)
+        return res.status(400).json({ error: "Kategorie, Titel und Preis sind Pflicht." });
 
-      const [result] = await pool.query(
+      await pool.query(
         `INSERT INTO menu_items (category_id, number, title, description, price, extras, active_from, active_to)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -143,9 +136,7 @@ const menuController = {
         ]
       );
 
-      // PDF aktualisieren
       await menuController.generateCardPDF(card_id);
-
       res.status(201).json({ message: "Gericht erstellt und PDF gespeichert." });
     } catch (err) {
       console.error(err);
@@ -176,7 +167,6 @@ const menuController = {
          ORDER BY number ASC`,
         [categoryId]
       );
-      if (rows.length === 0) return res.status(404).json({ error: "Keine Gerichte für diese Kategorie." });
       res.json(rows);
     } catch (err) {
       console.error(err);
@@ -196,28 +186,22 @@ const menuController = {
       if (existing.length === 0) return res.status(404).json({ error: "Gericht nicht gefunden." });
 
       const current = existing[0];
-      const updatedValues = [
-        category_id !== undefined ? category_id : current.category_id,
-        number !== undefined ? number : current.number,
-        title !== undefined ? title : current.title,
-        description !== undefined ? description : current.description,
-        price !== undefined ? price : current.price,
-        extras !== undefined ? JSON.stringify(extras) : current.extras,
-        active_from !== undefined ? active_from : current.active_from,
-        active_to !== undefined ? active_to : current.active_to,
-        current.id
-      ];
-
       await pool.query(
-        `UPDATE menu_items
-         SET category_id=?, number=?, title=?, description=?, price=?, extras=?, active_from=?, active_to=?
-         WHERE id=?`,
-        updatedValues
+        `UPDATE menu_items SET category_id=?, number=?, title=?, description=?, price=?, extras=?, active_from=?, active_to=? WHERE id=?`,
+        [
+          category_id ?? current.category_id,
+          number ?? current.number,
+          title ?? current.title,
+          description ?? current.description,
+          price ?? current.price,
+          extras ? JSON.stringify(extras) : current.extras,
+          active_from ?? current.active_from,
+          active_to ?? current.active_to,
+          id
+        ]
       );
 
-      // PDF aktualisieren
       await menuController.generateCardPDF(card_id);
-
       res.json({ message: "Gericht aktualisiert und PDF gespeichert." });
     } catch (err) {
       console.error(err);
@@ -237,10 +221,7 @@ const menuController = {
       if (existing.length === 0) return res.status(404).json({ error: "Gericht nicht gefunden." });
 
       await pool.query("DELETE FROM menu_items WHERE id=?", [id]);
-
-      // PDF aktualisieren
       await menuController.generateCardPDF(card_id);
-
       res.json({ message: "Gericht gelöscht und PDF gespeichert." });
     } catch (err) {
       console.error(err);
@@ -260,15 +241,10 @@ const menuController = {
         return res.status(400).json({ error: "Keine IDs übergeben." });
 
       for (let i = 0; i < orderedIds.length; i++) {
-        await pool.query(
-          "UPDATE menu_items SET number=? WHERE id=? AND category_id=?",
-          [i + 1, orderedIds[i], categoryId]
-        );
+        await pool.query("UPDATE menu_items SET number=? WHERE id=? AND category_id=?", [i + 1, orderedIds[i], categoryId]);
       }
 
-      // PDF aktualisieren
       await menuController.generateCardPDF(card_id);
-
       res.json({ message: "Gerichte neu sortiert und PDF gespeichert." });
     } catch (err) {
       console.error(err);
@@ -276,32 +252,39 @@ const menuController = {
     }
   },
 
-  // ==================== Karten ====================
   createCard: async (req, res) => {
     try {
       if (!checkAdmin(req.user))
         return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
-
+  
       const { name, description, start_date, end_date, is_active, unendlich } = req.body;
       if (!name) return res.status(400).json({ error: "Name der Karte ist Pflicht." });
-
+  
+      // Enddatum nur setzen, wenn nicht unendlich
       const finalEndDate = unendlich ? null : end_date || null;
-
+  
+      // Karte erstellen
       const [result] = await pool.query(
         `INSERT INTO cards (name, description, start_date, end_date, is_active)
          VALUES (?, ?, ?, ?, ?)`,
         [name, description || null, start_date || null, finalEndDate, is_active ? 1 : 0]
       );
-
-      // PDF erstellen (leer)
-      await menuController.generateCardPDF(result.insertId);
-
-      res.status(201).json({ message: "Karte erstellt und PDF gespeichert." });
+  
+      const newCardId = result.insertId;
+  
+      // PDF generieren – optional, aber wichtig für dein System
+      try {
+        await menuController.generateCardPDF(newCardId);
+      } catch (pdfErr) {
+        console.error("PDF konnte nicht erstellt werden:", pdfErr);
+      }
+  
+      res.status(201).json({ message: "Karte erstellt und PDF gespeichert.", cardId: newCardId });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Erstellen der Karte." });
     }
-  },
+  },  
 
   getAllCards: async (req, res) => {
     try {
@@ -320,63 +303,59 @@ const menuController = {
   getCardById: async (req, res) => {
     try {
       const cardId = req.params.id;
-      const [rows] = await pool.query(
-        `SELECT c.*, mi.*
+      const [card] = await pool.query("SELECT * FROM cards WHERE id=?", [cardId]);
+      if (!card.length) return res.status(404).json({ error: "Karte nicht gefunden." });
+
+      const [items] = await pool.query(
+        `SELECT c.id AS catId, c.name AS catName, mi.title, mi.price, mi.description
          FROM card_categories cc
          JOIN categories c ON cc.category_id = c.id
-         JOIN menu_items mi ON mi.category_id = c.id
-         JOIN cards ca ON cc.card_id = ca.id
-         WHERE ca.id=? AND ca.is_active=1
-           AND (ca.start_date IS NULL OR ca.start_date <= NOW())
-           AND (ca.end_date IS NULL OR ca.end_date >= NOW())
-           AND (mi.active_from IS NULL OR mi.active_from <= NOW())
-           AND (mi.active_to IS NULL OR mi.active_to >= NOW())
-         ORDER BY c.id, mi.number`,
+         LEFT JOIN menu_items mi ON mi.category_id = c.id
+         WHERE cc.card_id=?`,
         [cardId]
       );
 
-      if (rows.length === 0)
-        return res.status(404).json({ error: "Karte nicht gefunden oder keine aktiven Gerichte." });
-
-      res.json(rows);
+      res.json({ card: card[0], items });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Abrufen der Karte." });
     }
   },
 
-  // ==================== Hilfsfunktion PDF ====================
+  // ==================== PDF ====================
   generateCardPDF: async (cardId) => {
     try {
       if (!cardId) return;
+
+      const pdfDir = path.join(__dirname, "../pdf/cards");
+      if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
 
       const [cardRows] = await pool.query(
         `SELECT ca.name AS cardName, c.id AS catId, c.name AS catName, mi.title, mi.price, mi.description
          FROM card_categories cc
          JOIN categories c ON cc.category_id = c.id
-         JOIN menu_items mi ON mi.category_id = c.id
+         LEFT JOIN menu_items mi ON mi.category_id = c.id
          JOIN cards ca ON cc.card_id = ca.id
-         WHERE ca.id=? AND mi.active_from <= NOW() AND (mi.active_to IS NULL OR mi.active_to >= NOW())
-         ORDER BY c.id, mi.number`,
+         WHERE ca.id=?`,
         [cardId]
       );
 
-      if (!cardRows || cardRows.length === 0) return;
-
-      // Kategorien + Items strukturieren
+      const cardName = cardRows[0]?.cardName || "Karte";
       const categoriesWithItems = [];
       const catMap = {};
+
       cardRows.forEach((row) => {
         if (!catMap[row.catId]) {
           catMap[row.catId] = { name: row.catName, items: [] };
           categoriesWithItems.push(catMap[row.catId]);
         }
-        catMap[row.catId].items.push({ title: row.title, price: row.price, description: row.description });
+        if (row.title) catMap[row.catId].items.push({ title: row.title, price: row.price, description: row.description });
       });
 
-      await generateCardPDF(cardId, cardRows[0]?.cardName || "Karte", categoriesWithItems);
+      await generateCardPDF(cardId, cardName, categoriesWithItems);
+
     } catch (err) {
-      console.error("Fehler beim automatischen Erstellen der PDF:", err);
+      console.error("Fehler beim Erstellen der PDF:", err);
     }
   }
 };
