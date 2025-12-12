@@ -8,7 +8,6 @@ const path = require("path");
 const checkAdmin = (user) => user?.userTypes?.some((role) => ["admin"].includes(role));
 
 const menuController = {
-  // ==================== JWT Auth ====================
   authenticateToken: (req, res, next) => {
     const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(" ")[1];
@@ -24,8 +23,7 @@ const menuController = {
   // ==================== Kategorien ====================
   createCategory: async (req, res) => {
     try {
-      if (!checkAdmin(req.user))
-        return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
+      if (!checkAdmin(req.user)) return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
 
       const { name, description, card_id } = req.body;
       if (!name) return res.status(400).json({ error: "Name der Kategorie ist Pflicht." });
@@ -38,35 +36,17 @@ const menuController = {
         [name, description || null]
       );
 
-      if (card_id) {
-        await pool.query("INSERT INTO card_categories (card_id, category_id) VALUES (?, ?)", [
-          card_id,
-          result.insertId
-        ]);
-      }
-
-      await menuController.generateCardPDF(card_id);
-      res.status(201).json({ message: "Kategorie erstellt und PDF aktualisiert." });
+      if (card_id) await menuController.generateCardPDF(card_id);
+      res.status(201).json({ message: "Kategorie erstellt.", categoryId: result.insertId });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Erstellen der Kategorie." });
     }
   },
 
-  getAllCategories: async (req, res) => {
-    try {
-      const [rows] = await pool.query("SELECT * FROM categories ORDER BY id ASC");
-      res.json(rows);
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Fehler beim Abrufen der Kategorien." });
-    }
-  },
-
   updateCategory: async (req, res) => {
     try {
-      if (!checkAdmin(req.user))
-        return res.status(403).json({ error: "Nur Vorstände/Admins dürfen aktualisieren." });
+      if (!checkAdmin(req.user)) return res.status(403).json({ error: "Nur Vorstände/Admins dürfen aktualisieren." });
 
       const id = req.params.id;
       const { name, description, card_id } = req.body;
@@ -76,15 +56,11 @@ const menuController = {
 
       await pool.query(
         "UPDATE categories SET name=?, description=? WHERE id=?",
-        [
-          name || existing[0].name,
-          description !== undefined ? description : existing[0].description,
-          id
-        ]
+        [name || existing[0].name, description ?? existing[0].description, id]
       );
 
-      await menuController.generateCardPDF(card_id);
-      res.json({ message: "Kategorie aktualisiert und PDF gespeichert." });
+      if (card_id) await menuController.generateCardPDF(card_id);
+      res.json({ message: "Kategorie aktualisiert." });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Aktualisieren der Kategorie." });
@@ -93,8 +69,7 @@ const menuController = {
 
   deleteCategory: async (req, res) => {
     try {
-      if (!checkAdmin(req.user))
-        return res.status(403).json({ error: "Nur Vorstände/Admins dürfen löschen." });
+      if (!checkAdmin(req.user)) return res.status(403).json({ error: "Nur Vorstände/Admins dürfen löschen." });
 
       const id = req.params.id;
       const { card_id } = req.body;
@@ -103,8 +78,8 @@ const menuController = {
       if (existing.length === 0) return res.status(404).json({ error: "Kategorie nicht gefunden." });
 
       await pool.query("DELETE FROM categories WHERE id=?", [id]);
-      await menuController.generateCardPDF(card_id);
-      res.json({ message: "Kategorie gelöscht und PDF gespeichert." });
+      if (card_id) await menuController.generateCardPDF(card_id);
+      res.json({ message: "Kategorie gelöscht." });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Löschen der Kategorie." });
@@ -114,14 +89,13 @@ const menuController = {
   // ==================== Gerichte ====================
   createItem: async (req, res) => {
     try {
-      if (!checkAdmin(req.user))
-        return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
+      if (!checkAdmin(req.user)) return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
 
       const { category_id, number, title, description, price, extras, active_from, active_to, card_id } = req.body;
       if (!category_id || !title || !price)
         return res.status(400).json({ error: "Kategorie, Titel und Preis sind Pflicht." });
 
-      await pool.query(
+      const [result] = await pool.query(
         `INSERT INTO menu_items (category_id, number, title, description, price, extras, active_from, active_to)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -136,48 +110,17 @@ const menuController = {
         ]
       );
 
-      await menuController.generateCardPDF(card_id);
-      res.status(201).json({ message: "Gericht erstellt und PDF gespeichert." });
+      if (card_id) await menuController.generateCardPDF(card_id);
+      res.status(201).json({ message: "Gericht erstellt.", itemId: result.insertId });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Erstellen des Gerichts." });
     }
   },
 
-  getItem: async (req, res) => {
-    try {
-      const id = req.params.id;
-      const [rows] = await pool.query("SELECT * FROM menu_items WHERE id=?", [id]);
-      if (rows.length === 0) return res.status(404).json({ error: "Gericht nicht gefunden." });
-      res.json(rows[0]);
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Fehler beim Abrufen des Gerichts." });
-    }
-  },
-
-  getItemsByCategory: async (req, res) => {
-    try {
-      const categoryId = req.params.id;
-      const [rows] = await pool.query(
-        `SELECT * FROM menu_items
-         WHERE category_id=?
-         AND (active_from IS NULL OR active_from <= NOW())
-         AND (active_to IS NULL OR active_to >= NOW())
-         ORDER BY number ASC`,
-        [categoryId]
-      );
-      res.json(rows);
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Fehler beim Abrufen der Gerichte." });
-    }
-  },
-
   updateItem: async (req, res) => {
     try {
-      if (!checkAdmin(req.user))
-        return res.status(403).json({ error: "Nur Vorstände/Admins dürfen aktualisieren." });
+      if (!checkAdmin(req.user)) return res.status(403).json({ error: "Nur Vorstände/Admins dürfen aktualisieren." });
 
       const id = req.params.id;
       const { category_id, number, title, description, price, extras, active_from, active_to, card_id } = req.body;
@@ -201,8 +144,8 @@ const menuController = {
         ]
       );
 
-      await menuController.generateCardPDF(card_id);
-      res.json({ message: "Gericht aktualisiert und PDF gespeichert." });
+      if (card_id) await menuController.generateCardPDF(card_id);
+      res.json({ message: "Gericht aktualisiert." });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Aktualisieren des Gerichts." });
@@ -211,8 +154,7 @@ const menuController = {
 
   deleteItem: async (req, res) => {
     try {
-      if (!checkAdmin(req.user))
-        return res.status(403).json({ error: "Nur Vorstände/Admins dürfen löschen." });
+      if (!checkAdmin(req.user)) return res.status(403).json({ error: "Nur Vorstände/Admins dürfen löschen." });
 
       const id = req.params.id;
       const { card_id } = req.body;
@@ -221,70 +163,39 @@ const menuController = {
       if (existing.length === 0) return res.status(404).json({ error: "Gericht nicht gefunden." });
 
       await pool.query("DELETE FROM menu_items WHERE id=?", [id]);
-      await menuController.generateCardPDF(card_id);
-      res.json({ message: "Gericht gelöscht und PDF gespeichert." });
+      if (card_id) await menuController.generateCardPDF(card_id);
+      res.json({ message: "Gericht gelöscht." });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Löschen des Gerichts." });
     }
   },
 
-  reorderItems: async (req, res) => {
-    try {
-      if (!checkAdmin(req.user))
-        return res.status(403).json({ error: "Nur Vorstände/Admins dürfen aktualisieren." });
-
-      const categoryId = req.params.categoryId;
-      const { orderedIds, card_id } = req.body;
-
-      if (!Array.isArray(orderedIds) || orderedIds.length === 0)
-        return res.status(400).json({ error: "Keine IDs übergeben." });
-
-      for (let i = 0; i < orderedIds.length; i++) {
-        await pool.query("UPDATE menu_items SET number=? WHERE id=? AND category_id=?", [i + 1, orderedIds[i], categoryId]);
-      }
-
-      await menuController.generateCardPDF(card_id);
-      res.json({ message: "Gerichte neu sortiert und PDF gespeichert." });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Fehler beim Sortieren der Gerichte." });
-    }
-  },
-
+  // ==================== Karten ====================
   createCard: async (req, res) => {
     try {
-      if (!checkAdmin(req.user))
-        return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
-  
+      if (!checkAdmin(req.user)) return res.status(403).json({ error: "Nur Vorstände/Admins dürfen erstellen." });
+
       const { name, description, start_date, end_date, is_active, unendlich } = req.body;
       if (!name) return res.status(400).json({ error: "Name der Karte ist Pflicht." });
-  
-      // Enddatum nur setzen, wenn nicht unendlich
+
       const finalEndDate = unendlich ? null : end_date || null;
-  
-      // Karte erstellen
+
       const [result] = await pool.query(
         `INSERT INTO cards (name, description, start_date, end_date, is_active)
          VALUES (?, ?, ?, ?, ?)`,
         [name, description || null, start_date || null, finalEndDate, is_active ? 1 : 0]
       );
-  
+
       const newCardId = result.insertId;
-  
-      // PDF generieren – optional, aber wichtig für dein System
-      try {
-        await menuController.generateCardPDF(newCardId);
-      } catch (pdfErr) {
-        console.error("PDF konnte nicht erstellt werden:", pdfErr);
-      }
-  
+      await menuController.generateCardPDF(newCardId);
+
       res.status(201).json({ message: "Karte erstellt und PDF gespeichert.", cardId: newCardId });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Erstellen der Karte." });
     }
-  },  
+  },
 
   getAllCards: async (req, res) => {
     try {
@@ -357,7 +268,25 @@ const menuController = {
     } catch (err) {
       console.error("Fehler beim Erstellen der PDF:", err);
     }
+  },
+
+  // ==================== AUTO PDF EVERY 10 SECONDS ====================
+  autoGenerateAllPDFs: async () => {
+    try {
+      const [cards] = await pool.query("SELECT id FROM cards");
+      for (const card of cards) {
+        await menuController.generateCardPDF(card.id);
+      }
+      console.log("Alle PDFs automatisch aktualisiert");
+    } catch (err) {
+      console.error("Fehler bei automatischer PDF-Aktualisierung:", err);
+    }
   }
 };
+
+// Starte Timer automatisch beim Laden des Controllers
+setInterval(() => {
+  menuController.autoGenerateAllPDFs();
+}, 10000); // alle 10 Sekunden
 
 module.exports = menuController;
