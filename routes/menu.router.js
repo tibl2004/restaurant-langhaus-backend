@@ -13,6 +13,9 @@ router.get("/cards", menuController.getAllCards);
 
 // Einzelkarte holen + Kategorien + Items
 router.get("/cards/:id", menuController.getCardById);
+// Gerichte für eine Kategorie
+router.get("/category/:id/items", menuController.getItemsByCategory);
+
 
 //   🔐 JWT AUTH
 // =====================
@@ -30,8 +33,6 @@ router.delete("/categories/:id", menuController.deleteCategory);
 // =====================
 router.post("/items", menuController.createItem);
 
-// Gerichte für eine Kategorie
-router.get("/category/:id/items", menuController.getItemsByCategory);
 
 // Update Gericht
 router.put("/items/:id", menuController.updateItem);
