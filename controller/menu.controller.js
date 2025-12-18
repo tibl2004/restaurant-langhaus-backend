@@ -16,29 +16,40 @@ const menuController = {
     });
   },
 
-  // 🔹 Ganze Speisekarte abrufen
   getFullMenu: async (req, res) => {
     try {
-      const [categories] = await pool.query('SELECT * FROM menu_category ORDER BY id ASC');
+      const [categories] = await pool.query(`
+        SELECT *
+        FROM menu_category
+        WHERE start_date <= CURDATE()
+          AND (end_date IS NULL OR end_date >= CURDATE())
+        ORDER BY id ASC
+      `);
+  
       const menu = [];
+  
       for (let cat of categories) {
         const [items] = await pool.query(
           'SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC',
           [cat.id]
         );
+  
         menu.push({
           id: cat.id,
           name: cat.name,
           mwst: cat.mwst,
-          items: items
+          start_date: cat.start_date,
+          end_date: cat.end_date,
+          items
         });
       }
+  
       res.json(menu);
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Fehler beim Abrufen des Menüs' });
     }
-  },
+  },  
 
   // 🔹 Kategorie nach ID abrufen
   getCategoryById: async (req, res) => {
@@ -110,22 +121,37 @@ const menuController = {
     }
   },
 
-  // 🔹 Kategorie hinzufügen (Admin)
   addCategory: async (req, res) => {
-    const { name, mwst } = req.body;
-    if (!name) return res.status(400).json({ error: 'Kategorie-Name erforderlich' });
-
+    const { name, mwst, start_date, end_date } = req.body;
+  
+    if (!name) {
+      return res.status(400).json({ error: 'Kategorie-Name erforderlich' });
+    }
+  
     try {
       const [result] = await pool.query(
-        'INSERT INTO menu_category (name, mwst) VALUES (?, ?)',
-        [name, mwst || 8.1]
+        `
+        INSERT INTO menu_category (name, mwst, start_date, end_date)
+        VALUES (?, ?, ?, ?)
+        `,
+        [
+          name,
+          mwst || 8.1,
+          start_date || new Date(), // heute wenn leer
+          end_date || null           // null = unendlich
+        ]
       );
-      res.json({ message: 'Kategorie erfolgreich hinzugefügt', id: result.insertId });
+  
+      res.json({
+        message: 'Kategorie erfolgreich erstellt',
+        id: result.insertId
+      });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Fehler beim Hinzufügen der Kategorie' });
     }
   }
+  
 
 };
 
