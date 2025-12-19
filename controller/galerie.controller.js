@@ -52,8 +52,8 @@ const galerieController = {
       const [rows] = await pool.query(
         "SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC"
       );
-
-      res.status(200).json(
+  
+      res.json(
         rows.map((item) => ({
           id: item.id,
           bild: `${req.protocol}://${req.get("host")}/${item.bild}`,
@@ -65,7 +65,7 @@ const galerieController = {
       res.status(500).json({ error: "Fehler beim Abrufen der Galerie." });
     }
   },
-
+  
   /* =========================
      Bilder hochladen
   ========================= */
