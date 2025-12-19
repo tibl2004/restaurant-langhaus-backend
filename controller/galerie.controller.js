@@ -43,7 +43,6 @@ const authenticateToken = (req, res, next) => {
 };
 
 const galerieController = {
-  authenticateToken,
 
   /* =========================
      Galerie abrufen
