@@ -6,7 +6,7 @@ const menuController = require('../controller/menu.controller');
 router.get('/', menuController.getFullMenu);
 
 // 🔹 Kategorie nach ID
-router.get('/category/id/:id', menuController.getCategoryById);
+router.get('/category/:id', menuController.getCategoryById);
 
 // 🔹 Kategorie nach Name
 router.get('/category/name/:name', menuController.getCategoryByName);
