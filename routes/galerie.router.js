@@ -5,7 +5,6 @@ const galerieController = require("../controller/galerie.controller");
 // 🔹 Galerie abrufen
 router.get(
   "/",
-  galerieController.authenticateToken,
   galerieController.getGalerie
 );
 
