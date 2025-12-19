@@ -4,21 +4,32 @@ const fs = require("fs");
 const multer = require("multer");
 const jwt = require("jsonwebtoken");
 
-// 🔹 Multer Speicher
+/* =========================
+   Multer Speicher (wie Home)
+========================= */
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
+  destination: (req, file, cb) => {
     const uploadDir = path.join(__dirname, "../uploads/galerie");
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
-  filename: function (req, file, cb) {
-    cb(null, "galerie_" + Date.now() + "_" + Math.random().toString(36).substring(7) + path.extname(file.originalname));
+  filename: (req, file, cb) => {
+    cb(
+      null,
+      "galerie_" +
+        Date.now() +
+        "_" +
+        Math.random().toString(36).substring(7) +
+        path.extname(file.originalname)
+    );
   },
 });
 
 const upload = multer({ storage });
 
-// 🔹 Token Middleware
+/* =========================
+   Token Middleware
+========================= */
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
@@ -34,87 +45,91 @@ const authenticateToken = (req, res, next) => {
 const galerieController = {
   authenticateToken,
 
-  // 🔹 Galerie auslesen
+  /* =========================
+     Galerie abrufen
+  ========================= */
   getGalerie: async (req, res) => {
     try {
-      const [rows] = await pool.query("SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC");
+      const [rows] = await pool.query(
+        "SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC"
+      );
 
-      const galerie = rows.map((item) => ({
-        id: item.id,
-        bild: `${req.protocol}://${req.get("host")}/${item.bild}`,
-        erstellt_am: item.erstellt_am,
-      }));
-
-      res.status(200).json(galerie);
+      res.status(200).json(
+        rows.map((item) => ({
+          id: item.id,
+          bild: `${req.protocol}://${req.get("host")}/${item.bild}`,
+          erstellt_am: item.erstellt_am,
+        }))
+      );
     } catch (err) {
-      console.error("Fehler beim Abrufen der Galerie:", err);
+      console.error(err);
       res.status(500).json({ error: "Fehler beim Abrufen der Galerie." });
     }
   },
 
-  // 🔹 Mehrere Bilder hochladen
+  /* =========================
+     Bilder hochladen
+  ========================= */
   uploadGalerieBilder: [
-    upload.array("bilder", 20), // ⬅️ Mehrfach-Upload erlaubt
+    authenticateToken,          // ✅ WICHTIG
+    upload.array("bilder", 20),
     async (req, res) => {
       try {
         const { userTypes } = req.user;
-        if (!userTypes || !userTypes.includes("admin")) {
-          return res.status(403).json({ error: "Nur Vorstände dürfen Bilder hochladen." });
-        }
 
-        if (!req.files || req.files.length === 0) {
-          return res.status(400).json({ error: "Mindestens ein Bild ist erforderlich." });
-        }
+        if (!userTypes?.includes("admin"))
+          return res.status(403).json({ error: "Nur Admins dürfen Bilder hochladen." });
 
-        const insertedImages = [];
+        if (!req.files || req.files.length === 0)
+          return res.status(400).json({ error: "Mindestens ein Bild erforderlich." });
+
+        const bilder = [];
 
         for (const file of req.files) {
-          const filePath = "uploads/galerie/" + file.filename;
-
-          await pool.query("INSERT INTO galerie (bild) VALUES (?)", [filePath]);
-
-          insertedImages.push(`${req.protocol}://${req.get("host")}/${filePath}`);
+          const bildPath = "uploads/galerie/" + file.filename;
+          await pool.query("INSERT INTO galerie (bild) VALUES (?)", [bildPath]);
+          bilder.push(`${req.protocol}://${req.get("host")}/${bildPath}`);
         }
 
         res.status(201).json({
-          message: "Bilder erfolgreich hochgeladen.",
-          bilder: insertedImages,
+          message: "Galerie-Bilder erfolgreich hochgeladen.",
+          bilder,
         });
       } catch (err) {
-        console.error("Fehler beim Hochladen der Galerie-Bilder:", err);
-        res.status(500).json({ error: "Fehler beim Hochladen der Galerie-Bilder." });
+        console.error(err);
+        res.status(500).json({ error: "Upload fehlgeschlagen." });
       }
     },
   ],
 
-  // 🔹 Einzelnes Galerie-Bild löschen
-  deleteGalerieBild: async (req, res) => {
-    try {
-      const { userTypes } = req.user;
-      if (!userTypes || !userTypes.includes("vorstand")) {
-        return res.status(403).json({ error: "Nur Vorstände dürfen Bilder löschen." });
+  /* =========================
+     Bild löschen
+  ========================= */
+  deleteGalerieBild: [
+    authenticateToken,
+    async (req, res) => {
+      try {
+        const { userTypes } = req.user;
+        if (!userTypes?.includes("vorstand"))
+          return res.status(403).json({ error: "Nur Vorstände dürfen löschen." });
+
+        const { id } = req.params;
+
+        const [rows] = await pool.query("SELECT bild FROM galerie WHERE id = ?", [id]);
+        if (!rows.length) return res.status(404).json({ error: "Bild nicht gefunden." });
+
+        const fullPath = path.join(__dirname, "../", rows[0].bild);
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+
+        await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
+
+        res.status(200).json({ message: "Bild gelöscht." });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Löschen fehlgeschlagen." });
       }
-
-      const { id } = req.params;
-
-      const [rows] = await pool.query("SELECT bild FROM galerie WHERE id = ?", [id]);
-      if (!rows.length) return res.status(404).json({ error: "Bild nicht gefunden." });
-
-      const bildPath = rows[0].bild;
-      const fullPath = path.join(__dirname, "../", bildPath);
-
-      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-
-      await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
-
-      res.status(200).json({ message: "Bild erfolgreich gelöscht." });
-    } catch (err) {
-      console.error("Fehler beim Löschen des Galerie-Bildes:", err);
-      res.status(500).json({ error: "Fehler beim Löschen des Galerie-Bildes." });
-    }
-  },
-
-  uploadMiddleware: upload,
+    },
+  ],
 };
 
 module.exports = galerieController;
