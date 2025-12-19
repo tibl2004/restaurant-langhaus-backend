@@ -88,7 +88,43 @@ const menuController = {
       res.status(500).json({ error: 'Fehler beim Abrufen der Kategorie' });
     }
   },
+// 🔹 Drag & Drop Reihenfolge speichern (categoryId aus params)
+reorderItems: async (req, res) => {
+  const { categoryId } = req.params;
+  const { orderedItemIds } = req.body;
 
+  if (!categoryId || !Array.isArray(orderedItemIds)) {
+    return res.status(400).json({ error: "Ungültige Daten" });
+  }
+
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    for (let i = 0; i < orderedItemIds.length; i++) {
+      await connection.query(
+        `
+        UPDATE menu_item
+        SET nummer = ?
+        WHERE id = ? AND category_id = ?
+        `,
+        [i + 1, orderedItemIds[i], categoryId]
+      );
+    }
+
+    await connection.commit();
+    res.json({ message: "Reihenfolge erfolgreich aktualisiert" });
+
+  } catch (err) {
+    await connection.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Fehler beim Aktualisieren der Reihenfolge" });
+
+  } finally {
+    connection.release();
+  }
+},
   // 🔹 Einzelnes Item nach Nummer abrufen
   getItem: async (req, res) => {
     const { nummer } = req.params;

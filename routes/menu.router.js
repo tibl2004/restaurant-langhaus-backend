@@ -14,6 +14,12 @@ router.get('/category/name/:name', menuController.getCategoryByName);
 // 🔹 Einzelnes Item
 router.get('/item/:nummer', menuController.getItem);
 
+router.put(
+    "/category/:categoryId/items/reorder",
+    menuController.authenticateToken,
+    menuController.reorderItems
+  );
+  
 // 🔹 Admin-Routen (JWT)
 router.post('/category', menuController.authenticateToken, menuController.addCategory);
 router.post('/item', menuController.authenticateToken, menuController.addItem);
