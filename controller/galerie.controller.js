@@ -5,13 +5,33 @@ const multer = require("multer");
 const jwt = require("jsonwebtoken");
 
 /* =========================
-   Multer Speicher (wie Home)
+   AUTH MIDDLEWARE
+   (nur für POST / DELETE)
+========================= */
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token)
+    return res.status(401).json({ error: "Kein Token bereitgestellt" });
+
+  jwt.verify(token, "secretKey", (err, user) => {
+    if (err)
+      return res.status(403).json({ error: "Token ungültig" });
+
+    req.user = user;
+    next();
+  });
+};
+
+/* =========================
+   MULTER CONFIG
 ========================= */
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "../uploads/galerie");
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
+    const dir = path.join(__dirname, "../uploads/galerie");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
   },
   filename: (req, file, cb) => {
     cb(
@@ -19,7 +39,7 @@ const storage = multer.diskStorage({
       "galerie_" +
         Date.now() +
         "_" +
-        Math.random().toString(36).substring(7) +
+        Math.random().toString(36).slice(2) +
         path.extname(file.originalname)
     );
   },
@@ -28,104 +48,90 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 /* =========================
-   Token Middleware
+   CONTROLLER
 ========================= */
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Kein Token bereitgestellt." });
-
-  jwt.verify(token, "secretKey", (err, user) => {
-    if (err) return res.status(403).json({ error: "Ungültiger Token." });
-    req.user = user;
-    next();
-  });
-};
-
 const galerieController = {
 
   /* =========================
-     Galerie abrufen
+     PUBLIC – KEIN TOKEN
   ========================= */
-  getGalerie: async (req, res) => {
+  async getGalerie(req, res) {
     try {
       const [rows] = await pool.query(
         "SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC"
       );
-  
+
       res.json(
-        rows.map((item) => ({
-          id: item.id,
-          bild: `${req.protocol}://${req.get("host")}/${item.bild}`,
-          erstellt_am: item.erstellt_am,
+        rows.map((r) => ({
+          id: r.id,
+          bild: `${req.protocol}://${req.get("host")}/${r.bild}`,
+          erstellt_am: r.erstellt_am,
         }))
       );
     } catch (err) {
       console.error(err);
-      res.status(500).json({ error: "Fehler beim Abrufen der Galerie." });
+      res.status(500).json({ error: "Galerie konnte nicht geladen werden" });
     }
   },
-  
+
   /* =========================
-     Bilder hochladen
+     ADMIN – UPLOAD
   ========================= */
   uploadGalerieBilder: [
-    authenticateToken,          // ✅ WICHTIG
+    authenticateToken,
     upload.array("bilder", 20),
     async (req, res) => {
       try {
-        const { userTypes } = req.user;
-
-        if (!userTypes?.includes("admin"))
-          return res.status(403).json({ error: "Nur Admins dürfen Bilder hochladen." });
+        if (!req.user?.userTypes?.includes("admin"))
+          return res.status(403).json({ error: "Nur Admins erlaubt" });
 
         if (!req.files || req.files.length === 0)
-          return res.status(400).json({ error: "Mindestens ein Bild erforderlich." });
-
-        const bilder = [];
+          return res.status(400).json({ error: "Keine Bilder erhalten" });
 
         for (const file of req.files) {
-          const bildPath = "uploads/galerie/" + file.filename;
-          await pool.query("INSERT INTO galerie (bild) VALUES (?)", [bildPath]);
-          bilder.push(`${req.protocol}://${req.get("host")}/${bildPath}`);
+          await pool.query(
+            "INSERT INTO galerie (bild) VALUES (?)",
+            ["uploads/galerie/" + file.filename]
+          );
         }
 
-        res.status(201).json({
-          message: "Galerie-Bilder erfolgreich hochgeladen.",
-          bilder,
-        });
+        res.status(201).json({ message: "Upload erfolgreich" });
       } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Upload fehlgeschlagen." });
+        res.status(500).json({ error: "Upload fehlgeschlagen" });
       }
     },
   ],
 
   /* =========================
-     Bild löschen
+     VORSTAND – DELETE
   ========================= */
   deleteGalerieBild: [
     authenticateToken,
     async (req, res) => {
       try {
-        const { userTypes } = req.user;
-        if (!userTypes?.includes("vorstand"))
-          return res.status(403).json({ error: "Nur Vorstände dürfen löschen." });
+        if (!req.user?.userTypes?.includes("vorstand"))
+          return res.status(403).json({ error: "Nur Vorstand erlaubt" });
 
         const { id } = req.params;
 
-        const [rows] = await pool.query("SELECT bild FROM galerie WHERE id = ?", [id]);
-        if (!rows.length) return res.status(404).json({ error: "Bild nicht gefunden." });
+        const [rows] = await pool.query(
+          "SELECT bild FROM galerie WHERE id = ?",
+          [id]
+        );
 
-        const fullPath = path.join(__dirname, "../", rows[0].bild);
-        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+        if (!rows.length)
+          return res.status(404).json({ error: "Bild nicht gefunden" });
+
+        const filePath = path.join(__dirname, "../", rows[0].bild);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
         await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
 
-        res.status(200).json({ message: "Bild gelöscht." });
+        res.json({ message: "Bild gelöscht" });
       } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Löschen fehlgeschlagen." });
+        res.status(500).json({ error: "Löschen fehlgeschlagen" });
       }
     },
   ],

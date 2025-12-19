@@ -11,14 +11,12 @@ router.get(
 // 🔹 Mehrere Bilder hochladen
 router.post(
   "/upload",
-  galerieController.authenticateToken,
   galerieController.uploadGalerieBilder
 );
 
 // 🔹 Einzelnes Bild löschen
 router.delete(
   "/:id",
-  galerieController.authenticateToken,
   galerieController.deleteGalerieBild
 );
 
