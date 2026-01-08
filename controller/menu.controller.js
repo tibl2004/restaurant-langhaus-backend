@@ -292,7 +292,7 @@ cron.schedule("*/10 * * * *", async () => {
   try {
     const [cards] = await pool.query(`SELECT * FROM menu_card`);
     for (const card of cards) {
-      await generatePdfForCard(card);
+      await this.generatePdfForCard(card);
     }
   } catch (err) {
     console.error("❌ Fehler beim Abrufen der Karten für PDF-Generierung:", err);
