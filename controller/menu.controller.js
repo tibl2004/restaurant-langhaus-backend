@@ -225,7 +225,7 @@ getCategoriesByCardId: async (req, res) => {
 
 
 // Funktion, die PDF für eine Karte generiert
-generatePdfForCard: async (card) => {
+generatePdfForCard: async (card) => { 
   try {
     // Kategorien und Items abrufen
     const [categories] = await pool.query(
@@ -288,7 +288,7 @@ generatePdfForCard: async (card) => {
 
 };
 // Cronjob: alle 10 Minuten automatisch PDFs für alle Karten generieren
-cron.schedule("*/10 * * * *", async () => {
+cron.schedule("*/1 * * * *", async () => {
   try {
     const [cards] = await pool.query(`SELECT * FROM menu_card`);
     for (const card of cards) {
