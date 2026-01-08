@@ -57,18 +57,24 @@ const menuController = {
     res.json({ success: true });
   },
 
-  // 📂 Kategorien
-  createCategory: async (req, res) => {
-    const { menu_card_id, name } = req.body;
-    if (!menu_card_id || !name) return res.status(400).json({ error: "Card ID und Name erforderlich" });
+ // 📂 Kategorien
+createCategory: async (req, res) => {
+  const { cardId } = req.params; // Menü-Karten-ID aus URL
+  const { name } = req.body;
 
-    const [result] = await pool.query(
-      `INSERT INTO menu_category (menu_card_id, name) VALUES (?, ?)`,
-      [menu_card_id, name]
-    );
+  if (!cardId || !name) return res.status(400).json({ error: "Card ID und Name erforderlich" });
 
-    res.json({ id: result.insertId, menu_card_id, name });
-  },
+  const [result] = await pool.query(
+    `INSERT INTO menu_category (menu_card_id, name) VALUES (?, ?)`,
+    [cardId, name]
+  );
+
+  res.json({
+    id: result.insertId,
+    menu_card_id: cardId,
+    name
+  });
+},
 
   getCategoryById: async (req, res) => {
     const { id } = req.params;
@@ -79,70 +85,100 @@ const menuController = {
     res.json({ ...category, items });
   },
 
-  // 🍽️ Items
-  createItem: async (req, res) => {
-    const { category_id, name, zutaten, preis, nummer } = req.body;
-    if (!category_id || !name || !preis)
-      return res.status(400).json({ error: "Category ID, Name und Preis erforderlich" });
+// 🍽️ Items
+createItem: async (req, res) => {
+  const { categoryId } = req.params; // Kategorie-ID aus URL
+  const { name, zutaten, preis, nummer } = req.body;
 
-    let itemNumber = nummer;
+  if (!categoryId || !name || !preis)
+    return res.status(400).json({ error: "Category ID, Name und Preis erforderlich" });
 
-    // Wenn keine Nummer angegeben wird, automatisch max + 1
-    if (itemNumber === undefined || itemNumber === null) {
-      const [[{ max }]] = await pool.query(
-        `SELECT COALESCE(MAX(nummer), 0) AS max FROM menu_item WHERE category_id = ?`,
-        [category_id]
-      );
-      itemNumber = max + 1;
-    }
+  let itemNumber = nummer;
 
-    // Item einfügen
-    const [result] = await pool.query(
-      `INSERT INTO menu_item (category_id, nummer, name, zutaten, preis) VALUES (?, ?, ?, ?, ?)`,
-      [category_id, itemNumber, name, zutaten || "", preis]
+  // Wenn keine Nummer angegeben wird, automatisch max + 1
+  if (itemNumber === undefined || itemNumber === null) {
+    const [[{ max }]] = await pool.query(
+      `SELECT COALESCE(MAX(nummer), 0) AS max FROM menu_item WHERE category_id = ?`,
+      [categoryId]
+    );
+    itemNumber = max + 1;
+  }
+
+  // Item einfügen
+  const [result] = await pool.query(
+    `INSERT INTO menu_item (category_id, nummer, name, zutaten, preis) VALUES (?, ?, ?, ?, ?)`,
+    [categoryId, itemNumber, name, zutaten || "", preis]
+  );
+
+  // Rückgabe inkl. nummer
+  res.json({
+    id: result.insertId,
+    category_id: categoryId,
+    nummer: itemNumber,
+    name,
+    zutaten,
+    preis,
+  });
+},
+
+  // 📄 Speisekarte + andere Hauptkarten
+getSpeisekarte: async (req, res) => {
+  try {
+    const menu = [];
+
+    // 1️⃣ Feste Karte "Speisekarte" abrufen
+    const [[speisekarte]] = await pool.query(
+      `SELECT * FROM menu_card WHERE name = ? LIMIT 1`,
+      ["Speisekarte"]
     );
 
-    // Rückgabe inkl. nummer
-    res.json({
-      id: result.insertId,
-      category_id,
-      nummer: itemNumber,
-      name,
-      zutaten,
-      preis,
-    });
-  },
-  // 📄 Speisekarte (nur Karten mit include_in_main_menu = 1)
-  getSpeisekarte: async (req, res) => {
-    try {
-      const [cards] = await pool.query(
-        `SELECT * FROM menu_card WHERE include_in_main_menu = 1 ORDER BY start_date ASC`
+    if (speisekarte) {
+      const [categories] = await pool.query(
+        `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`,
+        [speisekarte.id]
       );
 
-      const menu = [];
-      for (const card of cards) {
-        const [categories] = await pool.query(
-          `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`,
-          [card.id]
+      for (const cat of categories) {
+        const [items] = await pool.query(
+          `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`,
+          [cat.id]
         );
-
-        for (const cat of categories) {
-          const [items] = await pool.query(
-            `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`,
-            [cat.id]
-          );
-          cat.items = items;
-        }
-
-        menu.push({ card, categories });
+        cat.items = items;
       }
 
-      res.json(menu);
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Fehler beim Laden der Speisekarte" });
+      menu.push({ card: speisekarte, categories });
     }
-  },
+
+    // 2️⃣ Alle anderen Karten mit include_in_main_menu = 1 abrufen
+    const [otherCards] = await pool.query(
+      `SELECT * FROM menu_card WHERE include_in_main_menu = 1 AND name != ? ORDER BY start_date ASC`,
+      ["Speisekarte"]
+    );
+
+    for (const card of otherCards) {
+      const [categories] = await pool.query(
+        `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`,
+        [card.id]
+      );
+
+      for (const cat of categories) {
+        const [items] = await pool.query(
+          `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`,
+          [cat.id]
+        );
+        cat.items = items;
+      }
+
+      menu.push({ card, categories });
+    }
+
+    res.json(menu);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Fehler beim Laden der Speisekarte" });
+  }
+},
 
   // 📄 Unterkarte einzeln
   getSubCardById: async (req, res) => {

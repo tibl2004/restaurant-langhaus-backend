@@ -2,32 +2,50 @@ const express = require("express");
 const router = express.Router();
 const menuController = require("../controller/menu.controller");
 
-// 🔐 Auth Middleware
+// 🔐 Middleware für JWT-Auth
 const authenticate = menuController.authenticateToken;
 
-// ===============================================
-// 🆕 Karten
-// ===============================================
-router.post("/cards", authenticate, menuController.createCard);           // Karte erstellen
-router.get("/cards", menuController.getAllCards);                          // Alle Karten abrufen
-router.put("/cards/:cardId", authenticate, menuController.updateCard);    // Karte updaten
-router.delete("/cards/:cardId", authenticate, menuController.deleteCard); // Karte löschen
+// =====================
+// Karten (menu_card)
+// =====================
 
-// ===============================================
-// 📂 Kategorien
-// ===============================================
-router.post("/categories", authenticate, menuController.createCategory);  // Kategorie erstellen
-router.get("/categories/:id", menuController.getCategoryById);            // Kategorie mit Items abrufen
+// Alle Karten abrufen
+router.get("/cards", authenticate, menuController.getAllCards);
 
-// ===============================================
-// 🍽️ Items
-// ===============================================
-router.post("/items", authenticate, menuController.createItem);           // Item erstellen (inkl. nummer aus Body)
+// Karte erstellen
+router.post("/cards", authenticate, menuController.createCard);
 
-// ===============================================
-// 📄 Speisekarten
-// ===============================================
-router.get("/speisekarte", menuController.getSpeisekarte);                // Alle Karten mit include_in_main_menu = 1
-router.get("/subcard/:cardId", menuController.getSubCardById);           // Einzelne Unterkarte mit Kategorien & Items
+// Karte aktualisieren
+router.put("/cards/:cardId", authenticate, menuController.updateCard);
+
+// Karte löschen
+router.delete("/cards/:cardId", authenticate, menuController.deleteCard);
+
+// Unterkarte einzeln abrufen
+router.get("/cards/:cardId", authenticate, menuController.getSubCardById);
+
+// =====================
+// Kategorien (menu_category)
+// =====================
+
+// Kategorie erstellen (cardId aus params)
+router.post("/cards/:cardId/categories", authenticate, menuController.createCategory);
+
+// Einzelne Kategorie inkl. Items abrufen
+router.get("/categories/:id", authenticate, menuController.getCategoryById);
+
+// =====================
+// Items (menu_item)
+// =====================
+
+// Item erstellen (categoryId aus params)
+router.post("/categories/:categoryId/items", authenticate, menuController.createItem);
+
+// =====================
+// Speisekarte + andere Hauptkarten
+// =====================
+
+// Feste Karte "Speisekarte" + weitere Hauptkarten
+router.get("/speisekarte", menuController.getSpeisekarte);
 
 module.exports = router;
