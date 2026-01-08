@@ -10,11 +10,12 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-
+ 
 app.use(
     "/uploads",
-    express.static(path.join(process.cwd(), "src/uploads"))
+    express.static(path.join(__dirname, "uploads"))
   );
+  
   
 
 // 🔹 CORS für alle erlauben (kein corsOptions nötig)

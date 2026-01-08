@@ -61,7 +61,7 @@ const galerieController = {
       const [rows] = await pool.query(
         "SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC"
       );
-
+  
       res.json(
         rows.map((r) => ({
           id: r.id,
@@ -73,7 +73,7 @@ const galerieController = {
       console.error(err);
       res.status(500).json({ error: "Galerie konnte nicht geladen werden" });
     }
-  },
+  },  
 
   /* =========================
      ADMIN – BILDER HOCHLADEN
