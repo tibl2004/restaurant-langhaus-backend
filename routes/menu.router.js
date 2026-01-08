@@ -6,14 +6,13 @@ const menuController = require("../controller/menu.controller");
 const authenticate = menuController.authenticateToken;
 
 
-// Aktuelle PDF einer Karte abrufen
+// 🔗 Aktuelle PDF-URL einer Karte abrufen
 router.get("/cards/:cardId/pdf", async (req, res) => {
   try {
     const { cardId } = req.params;
 
-    // Karte abrufen
-    const [[card]] = await menuController.pool.query(
-      `SELECT pdf_path, name FROM menu_card WHERE id = ? LIMIT 1`,
+    const [[card]] = await pool.query(
+      `SELECT id, name, pdf_path FROM menu_card WHERE id = ? LIMIT 1`,
       [cardId]
     );
 
@@ -21,12 +20,13 @@ router.get("/cards/:cardId/pdf", async (req, res) => {
       return res.status(404).json({ error: "PDF noch nicht generiert" });
     }
 
-    // Die URL zur PDF zurückgeben
+    // 🔥 DAS ist die URL, die du im Browser öffnen kannst
     res.json({
-      id: cardId,
+      cardId: card.id,
       name: card.name,
       pdf_url: card.pdf_path
     });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Fehler beim Abrufen der PDF" });
