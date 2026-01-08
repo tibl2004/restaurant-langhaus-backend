@@ -76,14 +76,7 @@ createCategory: async (req, res) => {
   });
 },
 
-  getCategoryById: async (req, res) => {
-    const { id } = req.params;
-    const [[category]] = await pool.query(`SELECT * FROM menu_category WHERE id = ?`, [id]);
-    if (!category) return res.status(404).json({ error: "Kategorie nicht gefunden" });
 
-    const [items] = await pool.query(`SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`, [id]);
-    res.json({ ...category, items });
-  },
 
 // 🍽️ Items
 createItem: async (req, res) => {
@@ -180,25 +173,37 @@ getSpeisekarte: async (req, res) => {
   }
 },
 
-  // 📄 Unterkarte einzeln
-  getSubCardById: async (req, res) => {
-    const { cardId } = req.params;
-    try {
-      const [[card]] = await pool.query(`SELECT * FROM menu_card WHERE id = ?`, [cardId]);
-      if (!card) return res.status(404).json({ error: "Unterkarte nicht gefunden" });
+// 📂 Alle Kategorien einer Karte abrufen
+getCategoriesByCardId: async (req, res) => {
+  const { cardId } = req.params;
 
-      const [categories] = await pool.query(`SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`, [cardId]);
-      for (const cat of categories) {
-        const [items] = await pool.query(`SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`, [cat.id]);
-        cat.items = items;
-      }
+  try {
+    // 1️⃣ Prüfen, ob die Karte existiert
+    const [[card]] = await pool.query(`SELECT * FROM menu_card WHERE id = ?`, [cardId]);
+    if (!card) return res.status(404).json({ error: "Karte nicht gefunden" });
 
-      res.json({ card, categories });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Fehler beim Laden der Unterkarte" });
+    // 2️⃣ Kategorien abrufen
+    const [categories] = await pool.query(
+      `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`,
+      [cardId]
+    );
+
+    // Optional: Items pro Kategorie mit abrufen
+    for (const cat of categories) {
+      const [items] = await pool.query(
+        `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`,
+        [cat.id]
+      );
+      cat.items = items;
     }
+
+    res.json({ card, categories });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Fehler beim Laden der Kategorien" });
   }
+},
+
 
 };
 

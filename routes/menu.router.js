@@ -21,8 +21,6 @@ router.put("/cards/:cardId", authenticate, menuController.updateCard);
 // Karte löschen
 router.delete("/cards/:cardId", authenticate, menuController.deleteCard);
 
-// Unterkarte einzeln abrufen
-router.get("/cards/:cardId", menuController.getSubCardById);
 
 // =====================
 // Kategorien (menu_category)
@@ -31,9 +29,8 @@ router.get("/cards/:cardId", menuController.getSubCardById);
 // Kategorie erstellen (cardId aus params)
 router.post("/cards/:cardId/categories", authenticate, menuController.createCategory);
 
-// Einzelne Kategorie inkl. Items abrufen
-router.get("/categories/:id", menuController.getCategoryById);
-
+// Alle Kategorien + Items einer Karte abrufen (NEU!)
+router.get("/card/:cardId/categories", menuController.getCategoriesByCardId);
 // =====================
 // Items (menu_item)
 // =====================
