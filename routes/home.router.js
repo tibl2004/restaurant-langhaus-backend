@@ -8,6 +8,6 @@ const homeController = require("../controller/home.controller");
 router.get("/", homeController.getHomeContent);
 
 // 🔹 Home-Content aktualisieren (PUT) – Admin / Vorstand
-router.put("/", authenticate, homeController.updateHomeContent);
+router.put("/", homeController.authenticateToken, homeController.updateHomeContent);
 
 module.exports = router;
