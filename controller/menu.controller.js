@@ -1,6 +1,12 @@
 const pool = require("../database/index");
 const jwt = require("jsonwebtoken");
-
+const fs = require("fs");
+const path = require("path");
+const PDFDocument = require("pdfkit");
+// Ordner für PDFs
+// Ordner für automatisierte PDFs (gleicher wie Multer)
+const uploadsDir = path.join(__dirname, "../uploads/menu");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const menuController = {
 
   // 🔐 JWT Auth
@@ -16,18 +22,29 @@ const menuController = {
     });
   },
 
-  // 🆕 Karten
-  createCard: async (req, res) => {
-    const { name, start_date, end_date, include_in_main_menu } = req.body;
-    if (!name) return res.status(400).json({ error: "Name erforderlich" });
+// 🆕 Karten
+createCard: async (req, res) => {
+  const { name, start_date, end_date, include_in_main_menu } = req.body;
+  if (!name) return res.status(400).json({ error: "Name erforderlich" });
 
-    const [result] = await pool.query(
-      `INSERT INTO menu_card (name, start_date, end_date, include_in_main_menu) VALUES (?, ?, ?, ?)`,
-      [name, start_date || null, end_date || null, include_in_main_menu ? 1 : 0]
-    );
+  // pdf_path ist nach name, wird beim Erstellen auf NULL gesetzt
+  const [result] = await pool.query(
+    `INSERT INTO menu_card (name, pdf_path, start_date, end_date, include_in_main_menu) 
+     VALUES (?, ?, ?, ?, ?)`,
+    [name, null, start_date || null, end_date || null, include_in_main_menu ? 1 : 0]
+  );
 
-    res.json({ id: result.insertId, name, start_date, end_date, include_in_main_menu });
-  },
+  res.json({
+    id: result.insertId,
+    name,
+    start_date,
+    end_date,
+    include_in_main_menu,
+    pdf_path: null // noch kein PDF vorhanden
+  });
+},
+
+
 
   getAllCards: async (req, res) => {
     const [cards] = await pool.query(`SELECT * FROM menu_card ORDER BY start_date ASC`);
@@ -205,6 +222,78 @@ getCategoriesByCardId: async (req, res) => {
 },
 
 
-};
+// Funktion, die PDF für eine Karte generiert
+generatePdfForCard: async (card) => {
+  try {
+    // Kategorien und Items abrufen
+    const [categories] = await pool.query(
+      `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`,
+      [card.id]
+    );
 
+    for (const cat of categories) {
+      const [items] = await pool.query(
+        `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`,
+        [cat.id]
+      );
+      cat.items = items;
+    }
+
+    // Alten PDF löschen, wenn vorhanden
+    if (card.pdf_path) {
+      const oldPath = path.join(__dirname, "../", card.pdf_path);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+
+    // PDF-Dateiname, passend zum Multer-Stil
+    const fileName =
+      "menu_" +
+      Date.now() +
+      "_" +
+      Math.random().toString(36).substring(7) +
+      ".pdf";
+
+    const pdfPath = path.join(uploadsDir, fileName);
+    const doc = new PDFDocument();
+
+    doc.pipe(fs.createWriteStream(pdfPath));
+
+    doc.fontSize(20).text(`Karte: ${card.name}`, { underline: true });
+    doc.moveDown();
+
+    for (const cat of categories) {
+      doc.fontSize(16).text(cat.name, { bold: true });
+      for (const item of cat.items) {
+        doc.fontSize(12).text(`- ${item.name}: ${item.preis}€`);
+      }
+      doc.moveDown();
+    }
+
+    doc.end();
+
+    // Relativer Pfad für DB
+    const relativePath = `/uploads/menu/${fileName}`;
+    await pool.query(`UPDATE menu_card SET pdf_path = ? WHERE id = ?`, [
+      relativePath,
+      card.id,
+    ]);
+
+    console.log(`✅ PDF für Karte "${card.name}" aktualisiert: ${relativePath}`);
+  } catch (err) {
+    console.error(`❌ Fehler beim Generieren der PDF für Karte "${card.name}":`, err);
+  }
+}
+
+};
+// Cronjob: alle 10 Minuten automatisch PDFs für alle Karten generieren
+cron.schedule("*/10 * * * *", async () => {
+  try {
+    const [cards] = await pool.query(`SELECT * FROM menu_card`);
+    for (const card of cards) {
+      await generatePdfForCard(card);
+    }
+  } catch (err) {
+    console.error("❌ Fehler beim Abrufen der Karten für PDF-Generierung:", err);
+  }
+});
 module.exports = menuController;
