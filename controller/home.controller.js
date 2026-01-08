@@ -60,6 +60,19 @@ const rotateHomeImageIfNeeded = async () => {
 
 // 🔹 Home Controller
 const homeController = {
+
+    // 🔐 JWT Auth
+    authenticateToken: (req, res, next) => {
+      const authHeader = req.headers["authorization"];
+      const token = authHeader && authHeader.split(" ")[1];
+      if (!token) return res.status(401).json({ error: "Kein Token" });
+  
+      jwt.verify(token, "secretKey", (err, user) => {
+        if (err) return res.status(403).json({ error: "Ungültiger Token" });
+        req.user = user;
+        next();
+      });
+    },
   // 🔹 Home Content abrufen
   getHomeContent: async (req, res) => {
     try {
