@@ -287,15 +287,16 @@ generatePdfForCard: async (card) => {
 }
 
 };
-// Cronjob: alle 10 Minuten automatisch PDFs für alle Karten generieren
-cron.schedule("*/1 * * * *", async () => {
+cron.schedule("*/10 * * * * *", async () => { // alle 10 Sekunden für Test
   try {
     const [cards] = await pool.query(`SELECT * FROM menu_card`);
     for (const card of cards) {
-      await this.generatePdfForCard(card);
+      await menuController.generatePdfForCard(card); // <-- hier
     }
+    console.log("✅ PDFs wurden automatisch aktualisiert");
   } catch (err) {
     console.error("❌ Fehler beim Abrufen der Karten für PDF-Generierung:", err);
   }
 });
+
 module.exports = menuController;
