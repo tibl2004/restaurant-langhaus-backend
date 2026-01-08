@@ -5,6 +5,35 @@ const menuController = require("../controller/menu.controller");
 // 🔐 Middleware für JWT-Auth
 const authenticate = menuController.authenticateToken;
 
+
+// Aktuelle PDF einer Karte abrufen
+router.get("/cards/:cardId/pdf", async (req, res) => {
+  try {
+    const { cardId } = req.params;
+
+    // Karte abrufen
+    const [[card]] = await menuController.pool.query(
+      `SELECT pdf_path, name FROM menu_card WHERE id = ? LIMIT 1`,
+      [cardId]
+    );
+
+    if (!card || !card.pdf_path) {
+      return res.status(404).json({ error: "PDF noch nicht generiert" });
+    }
+
+    // Die URL zur PDF zurückgeben
+    res.json({
+      id: cardId,
+      name: card.name,
+      pdf_url: card.pdf_path
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Fehler beim Abrufen der PDF" });
+  }
+});
+
+
 // =====================
 // Karten (menu_card)
 // =====================
