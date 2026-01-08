@@ -6,19 +6,19 @@ const jwt = require("jsonwebtoken");
 
 /* =========================
    AUTH MIDDLEWARE
-   (nur für POST / DELETE)
 ========================= */
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(" ")[1];
 
-  if (!token)
+  if (!token) {
     return res.status(401).json({ error: "Kein Token bereitgestellt" });
+  }
 
   jwt.verify(token, "secretKey", (err, user) => {
-    if (err)
+    if (err) {
       return res.status(403).json({ error: "Token ungültig" });
-
+    }
     req.user = user;
     next();
   });
@@ -30,7 +30,9 @@ const authenticateToken = (req, res, next) => {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, "../uploads/galerie");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     cb(null, dir);
   },
   filename: (req, file, cb) => {
@@ -51,9 +53,8 @@ const upload = multer({ storage });
    CONTROLLER
 ========================= */
 const galerieController = {
-
   /* =========================
-     PUBLIC – KEIN TOKEN
+     PUBLIC – GALERIE LADEN
   ========================= */
   async getGalerie(req, res) {
     try {
@@ -64,7 +65,7 @@ const galerieController = {
       res.json(
         rows.map((r) => ({
           id: r.id,
-          bild: `${req.protocol}://${req.get("host")}/${r.bild}`,
+          bild: `${req.protocol}://${req.get("host")}${r.bild}`,
           erstellt_am: r.erstellt_am,
         }))
       );
@@ -75,23 +76,25 @@ const galerieController = {
   },
 
   /* =========================
-     ADMIN – UPLOAD
+     ADMIN – BILDER HOCHLADEN
   ========================= */
   uploadGalerieBilder: [
     authenticateToken,
     upload.array("bilder", 20),
     async (req, res) => {
       try {
-        if (!req.user?.userTypes?.includes("admin"))
+        if (!req.user?.userTypes?.includes("admin")) {
           return res.status(403).json({ error: "Nur Admins erlaubt" });
+        }
 
-        if (!req.files || req.files.length === 0)
+        if (!req.files || req.files.length === 0) {
           return res.status(400).json({ error: "Keine Bilder erhalten" });
+        }
 
         for (const file of req.files) {
           await pool.query(
             "INSERT INTO galerie (bild) VALUES (?)",
-            ["uploads/galerie/" + file.filename]
+            ["/uploads/galerie/" + file.filename]
           );
         }
 
@@ -104,14 +107,15 @@ const galerieController = {
   ],
 
   /* =========================
-     VORSTAND – DELETE
+     VORSTAND – BILD LÖSCHEN
   ========================= */
   deleteGalerieBild: [
     authenticateToken,
     async (req, res) => {
       try {
-        if (!req.user?.userTypes?.includes("vorstand"))
+        if (!req.user?.userTypes?.includes("vorstand")) {
           return res.status(403).json({ error: "Nur Vorstand erlaubt" });
+        }
 
         const { id } = req.params;
 
@@ -120,11 +124,14 @@ const galerieController = {
           [id]
         );
 
-        if (!rows.length)
+        if (!rows.length) {
           return res.status(404).json({ error: "Bild nicht gefunden" });
+        }
 
         const filePath = path.join(__dirname, "../", rows[0].bild);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
 
         await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
 
