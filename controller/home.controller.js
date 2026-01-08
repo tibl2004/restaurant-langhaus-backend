@@ -1,51 +1,17 @@
 const pool = require("../database/index"); // mysql2/promise
-const path = require("path");
-const fs = require("fs");
-const multer = require("multer");
 const jwt = require("jsonwebtoken");
 
-// 🔹 Multer Speicher für Uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "../uploads/home");
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(
-      null,
-      "home_" +
-        Date.now() +
-        "_" +
-        Math.random().toString(36).substring(7) +
-        path.extname(file.originalname)
-    );
-  },
-});
 
-const upload = multer({ storage });
-
-// 🔹 Token Middleware
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Kein Token bereitgestellt." });
-
-  jwt.verify(token, "secretKey", (err, user) => {
-    if (err) return res.status(403).json({ error: "Ungültiger Token." });
-    req.user = user;
-    next();
-  });
-};
-
-// 🔹 Home Rotation: alle 12h neues Bild
+// 🔹 Home Rotation: alle 12h nächstes Galerie-Bild
 const rotateHomeImageIfNeeded = async () => {
   const now = new Date();
 
+  // Prüfen, ob schon ein Eintrag in home_rotation existiert
   const [rotationRows] = await pool.query(
     "SELECT * FROM home_rotation LIMIT 1"
   );
 
+  // 🟢 Erststart: noch keine Rotation → erstes Galerie-Bild nehmen
   if (!rotationRows.length) {
     const [first] = await pool.query(
       "SELECT id FROM galerie ORDER BY id ASC LIMIT 1"
@@ -63,8 +29,10 @@ const rotateHomeImageIfNeeded = async () => {
   const lastSwitch = new Date(rotation.last_switch);
   const diffHours = (now - lastSwitch) / 1000 / 60 / 60;
 
+  // Noch keine 12 Stunden vergangen → aktuelles Bild behalten
   if (diffHours < 12) return rotation.galerie_id;
 
+  // 🔁 Nächstes Galerie-Bild
   const [next] = await pool.query(
     "SELECT id FROM galerie WHERE id > ? ORDER BY id ASC LIMIT 1",
     [rotation.galerie_id]
@@ -74,12 +42,14 @@ const rotateHomeImageIfNeeded = async () => {
   if (next.length) {
     nextId = next[0].id;
   } else {
+    // Wenn Ende erreicht → wieder von vorne
     const [first] = await pool.query(
       "SELECT id FROM galerie ORDER BY id ASC LIMIT 1"
     );
     nextId = first[0].id;
   }
 
+  // Rotation aktualisieren
   await pool.query(
     "UPDATE home_rotation SET galerie_id = ?, last_switch = ?",
     [nextId, now]
@@ -90,15 +60,15 @@ const rotateHomeImageIfNeeded = async () => {
 
 // 🔹 Home Controller
 const homeController = {
-  authenticateToken,
-
   // 🔹 Home Content abrufen
   getHomeContent: async (req, res) => {
     try {
+      // aktuelles Galerie-Bild ermitteln
       const galerieId = await rotateHomeImageIfNeeded();
 
+      // Willkommenstext, Willkommenlink, Blinktext aus home_content
       const [[home]] = await pool.query(
-        "SELECT willkommen_text, willkommen_link FROM home_content LIMIT 1"
+        "SELECT willkommen_text, willkommen_link, blinktext FROM home_content LIMIT 1"
       );
 
       let bild = null;
@@ -108,6 +78,7 @@ const homeController = {
           [galerieId]
         );
         if (img?.bild) {
+          // URL für Frontend
           bild = `${req.protocol}://${req.get("host")}/${img.bild}`;
         }
       }
@@ -116,6 +87,7 @@ const homeController = {
         bild,
         willkommenText: home?.willkommen_text || "",
         willkommenLink: home?.willkommen_link || "",
+        blinkText: home?.blinktext || "",
       });
     } catch (err) {
       console.error("Home Fehler:", err);
@@ -123,120 +95,40 @@ const homeController = {
     }
   },
 
-  // 🔹 Home Content erstellen
-  createHomeContent: [
-    authenticateToken,
-    upload.single("bild"),
-    async (req, res) => {
-      try {
-        const { userTypes } = req.user;
-        if (!userTypes?.includes("admin"))
-          return res.status(403).json({ error: "Nur Admins dürfen Inhalte erstellen." });
+  // 🔹 Home Content aktualisieren (nur Texte)
+  updateHomeContent: async (req, res) => {
+    try {
+      const { userTypes } = req.user;
+      if (!userTypes?.includes("admin") && !userTypes?.includes("vorstand"))
+        return res.status(403).json({ error: "Nur Admins oder Vorstände dürfen aktualisieren." });
 
-        const { willkommenText, willkommenLink } = req.body;
+      const { willkommenText, willkommenLink, blinkText } = req.body;
 
-        if (!req.file || !willkommenText || !willkommenLink)
-          return res.status(400).json({ error: "Bild, Text und Link sind erforderlich." });
+      // Existierenden Content abrufen
+      const [existing] = await pool.query(
+        "SELECT id FROM home_content LIMIT 1"
+      );
 
-        const [existing] = await pool.query("SELECT id FROM home_content LIMIT 1");
-        if (existing.length > 0)
-          return res.status(400).json({ error: "Home-Content existiert bereits. Bitte UPDATE verwenden." });
-
-        const bildPath = "uploads/home/" + req.file.filename;
-
+      if (!existing.length) {
+        // Wenn kein Eintrag existiert → CREATE
         await pool.query(
-          "INSERT INTO home_content (bild, willkommen_text, willkommen_link) VALUES (?, ?, ?)",
-          [bildPath, willkommenText, willkommenLink]
+          "INSERT INTO home_content (willkommen_text, willkommen_link, blinktext) VALUES (?, ?, ?)",
+          [willkommenText || "", willkommenLink || "", blinkText || ""]
         );
-
-        res.status(201).json({
-          message: "Home-Content erstellt.",
-          bild: `${req.protocol}://${req.get("host")}/${bildPath}`,
-        });
-      } catch (err) {
-        console.error("Fehler beim Erstellen:", err);
-        res.status(500).json({ error: "Fehler beim Erstellen des Home-Contents." });
-      }
-    },
-  ],
-
-  // 🔹 Home Content aktualisieren
-  updateHomeContent: [
-    authenticateToken,
-    upload.single("bild"),
-    async (req, res) => {
-      try {
-        const { userTypes } = req.user;
-        if (!userTypes?.includes("admin") && !userTypes?.includes("vorstand"))
-          return res.status(403).json({ error: "Nur Admins oder Vorstände dürfen aktualisieren." });
-
-        const { willkommenText, willkommenLink } = req.body;
-
-        const [existing] = await pool.query(
-          "SELECT id, bild, willkommen_text, willkommen_link FROM home_content LIMIT 1"
-        );
-
-        if (!existing.length)
-          return res.status(400).json({ error: "Kein Content vorhanden. Bitte CREATE verwenden." });
-
-        const old = existing[0];
-        let bildPath = old.bild;
-
-        if (req.file) {
-          bildPath = "uploads/home/" + req.file.filename;
-          const oldFullPath = path.join(__dirname, "../", old.bild);
-          if (fs.existsSync(oldFullPath)) fs.unlinkSync(oldFullPath);
-        }
-
+      } else {
+        const id = existing[0].id;
         await pool.query(
-          "UPDATE home_content SET bild = ?, willkommen_text = ?, willkommen_link = ?, aktualisiert_am = NOW() WHERE id = ?",
-          [
-            bildPath,
-            willkommenText || old.willkommen_text,
-            willkommenLink || old.willkommen_link,
-            old.id,
-          ]
+          "UPDATE home_content SET willkommen_text = ?, willkommen_link = ?, blinktext = ?, aktualisiert_am = NOW() WHERE id = ?",
+          [willkommenText || "", willkommenLink || "", blinkText || "", id]
         );
-
-        res.status(200).json({
-          message: "Home-Content erfolgreich aktualisiert.",
-          bild: `${req.protocol}://${req.get("host")}/${bildPath}`,
-          willkommenText: willkommenText || old.willkommen_text,
-          willkommenLink: willkommenLink || old.willkommen_link,
-        });
-      } catch (err) {
-        console.error("Fehler beim Aktualisieren:", err);
-        res.status(500).json({ error: "Fehler beim Aktualisieren des Home-Contents." });
       }
-    },
-  ],
 
-  // 🔹 Home Content löschen
-  deleteHomeContent: [
-    authenticateToken,
-    async (req, res) => {
-      try {
-        const { userTypes } = req.user;
-        if (!userTypes?.includes("vorstand"))
-          return res.status(403).json({ error: "Nur Vorstände dürfen löschen." });
-
-        const [existing] = await pool.query("SELECT id, bild FROM home_content LIMIT 1");
-        if (!existing.length) return res.status(404).json({ error: "Kein Home-Content vorhanden." });
-
-        const fullPath = path.join(__dirname, "../", existing[0].bild);
-        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-
-        await pool.query("DELETE FROM home_content WHERE id = ?", [existing[0].id]);
-
-        res.status(200).json({ message: "Home-Content gelöscht." });
-      } catch (err) {
-        console.error("Fehler beim Löschen:", err);
-        res.status(500).json({ error: "Fehler beim Löschen des Home-Contents." });
-      }
-    },
-  ],
-
-  uploadMiddleware: upload,
+      res.status(200).json({ message: "Home-Content erfolgreich aktualisiert." });
+    } catch (err) {
+      console.error("Fehler beim Aktualisieren:", err);
+      res.status(500).json({ error: "Fehler beim Aktualisieren des Home-Contents." });
+    }
+  }
 };
 
 module.exports = homeController;
