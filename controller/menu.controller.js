@@ -3,6 +3,8 @@ const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");
+const cron = require("node-cron"); // ← hier hinzufügen
+
 // Ordner für PDFs
 // Ordner für automatisierte PDFs (gleicher wie Multer)
 const uploadsDir = path.join(__dirname, "../uploads/menu");
