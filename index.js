@@ -11,8 +11,11 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// 🔹 Uploads öffentlich machen – direkt nach app = express()
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(
+    "/uploads",
+    express.static(path.join(process.cwd(), "src/uploads"))
+  );
+  
 
 // 🔹 CORS für alle erlauben (kein corsOptions nötig)
 app.use(cors());
