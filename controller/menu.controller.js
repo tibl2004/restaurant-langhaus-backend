@@ -81,22 +81,37 @@ const menuController = {
 
   // 🍽️ Items
   createItem: async (req, res) => {
-    const { category_id, name, zutaten, preis } = req.body;
-    if (!category_id || !name || !preis) return res.status(400).json({ error: "Category ID, Name und Preis erforderlich" });
+    const { category_id, name, zutaten, preis, nummer } = req.body;
+    if (!category_id || !name || !preis)
+      return res.status(400).json({ error: "Category ID, Name und Preis erforderlich" });
 
-    const [[{ max }]] = await pool.query(
-      `SELECT COALESCE(MAX(nummer),0) AS max FROM menu_item WHERE category_id = ?`,
-      [category_id]
-    );
+    let itemNumber = nummer;
 
+    // Wenn keine Nummer angegeben wird, automatisch max + 1
+    if (itemNumber === undefined || itemNumber === null) {
+      const [[{ max }]] = await pool.query(
+        `SELECT COALESCE(MAX(nummer), 0) AS max FROM menu_item WHERE category_id = ?`,
+        [category_id]
+      );
+      itemNumber = max + 1;
+    }
+
+    // Item einfügen
     const [result] = await pool.query(
       `INSERT INTO menu_item (category_id, nummer, name, zutaten, preis) VALUES (?, ?, ?, ?, ?)`,
-      [category_id, max + 1, name, zutaten || "", preis]
+      [category_id, itemNumber, name, zutaten || "", preis]
     );
 
-    res.json({ id: result.insertId, category_id, name, zutaten, preis });
+    // Rückgabe inkl. nummer
+    res.json({
+      id: result.insertId,
+      category_id,
+      nummer: itemNumber,
+      name,
+      zutaten,
+      preis,
+    });
   },
-
   // 📄 Speisekarte (nur Karten mit include_in_main_menu = 1)
   getSpeisekarte: async (req, res) => {
     try {
