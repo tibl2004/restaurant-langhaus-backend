@@ -287,8 +287,8 @@ generatePdfForCard: async (card) => {
 }
 
 };
-cron.schedule("*/10 * * * * *", async () => { // alle 10 Sekunden für Test
-  try {
+cron.schedule("*/2 * * * *", async () => { 
+    try {
     const [cards] = await pool.query(`SELECT * FROM menu_card`);
     for (const card of cards) {
       await menuController.generatePdfForCard(card); // <-- hier
