@@ -2,6 +2,9 @@ const express = require("express");
 const router = express.Router();
 const menuController = require("../controller/menu.controller");
 
+const pool = require("../database/index"); // ✅ FEHLT → JETZT FIX
+
+
 // 🔐 Middleware für JWT-Auth
 const authenticate = menuController.authenticateToken;
 
