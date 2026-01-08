@@ -92,7 +92,7 @@ const homeController = {
         );
         if (img?.bild) {
           // URL für Frontend
-          bild = `${req.protocol}:/${req.get("host")}${img.bild}`;
+          bild = `${req.protocol}://${req.get("host")}${img.bild.startsWith("/") ? "" : "/"}${img.bild}`;
         }
       }
 
