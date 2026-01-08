@@ -10,7 +10,7 @@ const authenticate = menuController.authenticateToken;
 // =====================
 
 // Alle Karten abrufen
-router.get("/cards", authenticate, menuController.getAllCards);
+router.get("/cards", menuController.getAllCards);
 
 // Karte erstellen
 router.post("/cards", authenticate, menuController.createCard);
@@ -22,7 +22,7 @@ router.put("/cards/:cardId", authenticate, menuController.updateCard);
 router.delete("/cards/:cardId", authenticate, menuController.deleteCard);
 
 // Unterkarte einzeln abrufen
-router.get("/cards/:cardId", authenticate, menuController.getSubCardById);
+router.get("/cards/:cardId", menuController.getSubCardById);
 
 // =====================
 // Kategorien (menu_category)
@@ -32,7 +32,7 @@ router.get("/cards/:cardId", authenticate, menuController.getSubCardById);
 router.post("/cards/:cardId/categories", authenticate, menuController.createCategory);
 
 // Einzelne Kategorie inkl. Items abrufen
-router.get("/categories/:id", authenticate, menuController.getCategoryById);
+router.get("/categories/:id", menuController.getCategoryById);
 
 // =====================
 // Items (menu_item)
