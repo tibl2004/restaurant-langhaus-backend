@@ -24,6 +24,68 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+const rotateHomeImageIfNeeded = async () => {
+  const now = new Date();
+
+  const [rotationRows] = await pool.query(
+    "SELECT * FROM home_rotation LIMIT 1"
+  );
+
+  // 🟢 Erststart
+  if (!rotationRows.length) {
+    const [first] = await pool.query(
+      "SELECT id FROM galerie ORDER BY id ASC LIMIT 1"
+    );
+
+    if (!first.length) return null;
+
+    await pool.query(
+      "INSERT INTO home_rotation (galerie_id, last_switch) VALUES (?, ?)",
+      [first[0].id, now]
+    );
+
+    return first[0].id;
+  }
+
+  const rotation = rotationRows[0];
+  const lastSwitch = new Date(rotation.last_switch);
+  const diffHours = (now - lastSwitch) / 1000 / 60 / 60;
+
+  // ⏱️ Noch keine 12 Stunden → aktuelles Bild behalten
+  if (diffHours < 12) {
+    return rotation.galerie_id;
+  }
+
+  // 🔁 Nächstes Galerie-Bild
+  const [next] = await pool.query(
+    `
+    SELECT id FROM galerie
+    WHERE id > ?
+    ORDER BY id ASC
+    LIMIT 1
+    `,
+    [rotation.galerie_id]
+  );
+
+  let nextId;
+
+  if (next.length) {
+    nextId = next[0].id;
+  } else {
+    // 🔄 Wieder von vorne
+    const [first] = await pool.query(
+      "SELECT id FROM galerie ORDER BY id ASC LIMIT 1"
+    );
+    nextId = first[0].id;
+  }
+
+  await pool.query(
+    "UPDATE home_rotation SET galerie_id = ?, last_switch = ?",
+    [nextId, now]
+  );
+
+  return nextId;
+};
 
 // 🔹 Token Middleware
 const authenticateToken = (req, res, next) => {
@@ -42,28 +104,37 @@ const authenticateToken = (req, res, next) => {
 const homeController = {
   authenticateToken,
 
-  // 🔹 Home Content abrufen
   getHomeContent: async (req, res) => {
     try {
-      const [rows] = await pool.query(
-        "SELECT id, bild, willkommen_text, willkommen_link FROM home_content ORDER BY id DESC LIMIT 1"
+      const galerieId = await rotateHomeImageIfNeeded();
+  
+      const [[home]] = await pool.query(
+        "SELECT willkommen_text, willkommen_link FROM home_content LIMIT 1"
       );
-
-      if (!rows.length) return res.status(404).json({ error: "Kein Home-Content gefunden." });
-
-      const content = rows[0];
-
+  
+      let bild = null;
+  
+      if (galerieId) {
+        const [[img]] = await pool.query(
+          "SELECT bild FROM galerie WHERE id = ?",
+          [galerieId]
+        );
+  
+        if (img?.bild) {
+          bild = `${req.protocol}://${req.get("host")}/${img.bild}`;
+        }
+      }
+  
       res.status(200).json({
-        id: content.id,
-        bild: content.bild ? `${req.protocol}://${req.get("host")}/${content.bild}` : null,
-        willkommenText: content.willkommen_text,
-        willkommenLink: content.willkommen_link,
+        bild,
+        willkommenText: home?.willkommen_text || "",
+        willkommenLink: home?.willkommen_link || "",
       });
     } catch (err) {
-      console.error("Fehler beim Abrufen des Home-Contents:", err);
-      res.status(500).json({ error: "Fehler beim Abrufen des Home-Contents." });
+      console.error("Home Fehler:", err);
+      res.status(500).json({ error: "Home konnte nicht geladen werden" });
     }
-  },
+  },  
 
   // 🔹 Home Content erstellen
   createHomeContent: [

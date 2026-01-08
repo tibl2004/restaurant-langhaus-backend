@@ -1,27 +1,25 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const menuController = require('../controller/menu.controller');
+const menuController = require("../controller/menu.controller");
 
-// 🔹 Speisekarte
-router.get('/', menuController.getFullMenu);
+// 🔐 Auth
+const authenticate = menuController.authenticateToken;
 
-// 🔹 Kategorie nach ID
-router.get('/category/:id', menuController.getCategoryById);
+// 🆕 Karten-Routen
+router.post("/cards", authenticate, menuController.createCard);           // Karte erstellen
+router.get("/cards", menuController.getAllCards);                          // Alle Karten
+router.put("/cards/:cardId", authenticate, menuController.updateCard);    // Karte updaten
+router.delete("/cards/:cardId", authenticate, menuController.deleteCard); // Karte löschen
 
-// 🔹 Kategorie nach Name
-router.get('/category/name/:name', menuController.getCategoryByName);
+// 📂 Kategorien-Routen
+router.post("/categories", authenticate, menuController.createCategory);  // Kategorie erstellen
+router.get("/categories/:id", menuController.getCategoryById);            // Kategorie mit Items
 
-// 🔹 Einzelnes Item
-router.get('/item/:nummer', menuController.getItem);
+// 🍽️ Items-Routen
+router.post("/items", authenticate, menuController.createItem);           // Item erstellen
 
-router.put(
-    "/category/:categoryId/items/reorder",
-    menuController.authenticateToken,
-    menuController.reorderItems
-  );
-  
-// 🔹 Admin-Routen (JWT)
-router.post('/category', menuController.authenticateToken, menuController.addCategory);
-router.post('/item', menuController.authenticateToken, menuController.addItem);
+// 📄 Speisekarten-Routen
+router.get("/speisekarte", menuController.getSpeisekarte);                // Hauptkarte
+router.get("/subcard/:cardId", menuController.getSubCardById);           // Unterkarte
 
 module.exports = router;
