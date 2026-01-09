@@ -19,43 +19,37 @@ const oeffnungszeitenController = {
   getOeffnungszeiten: async (req, res) => {
     try {
       const [rows] = await pool.query(
-        `SELECT * 
-         FROM oeffnungszeiten 
-         ORDER BY 
+        `SELECT *
+         FROM oeffnungszeiten
+         ORDER BY
            FIELD(wochentag,'Mo','Di','Mi','Do','Fr','Sa','So'),
            kategorie,
            von`
       );
   
       const WOCHEN_ORDER = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+      const fmt = (t) => (t ? t.slice(0, 5) : null);
   
-      // HH:MM:SS -> HH:MM
-      const fmt = (time) => (time ? time.slice(0, 5) : null);
-  
-      // { kategorieKey -> { wochentag -> [ {von,bis} ] } }
+      // { kategorieKey -> { wochentag -> [zeiten] } }
       const tmp = {};
   
-      // 🔹 Datensammlung
       for (const row of rows) {
         const catKey =
           row.kategorie && row.kategorie.trim() !== ""
             ? row.kategorie.trim()
             : "__DEFAULT__";
   
-        const wt = row.wochentag;
-  
         if (!tmp[catKey]) tmp[catKey] = {};
-        if (!tmp[catKey][wt]) tmp[catKey][wt] = [];
+        if (!tmp[catKey][row.wochentag]) tmp[catKey][row.wochentag] = [];
   
         if (row.von && row.bis) {
-          tmp[catKey][wt].push({
+          tmp[catKey][row.wochentag].push({
             von: fmt(row.von),
             bis: fmt(row.bis),
           });
         }
       }
   
-      // 🔹 Hilfsfunktion: Mo–Fr zusammenfassen
       const compressDays = (days) => {
         const sorted = [...days].sort(
           (a, b) => WOCHEN_ORDER.indexOf(a) - WOCHEN_ORDER.indexOf(b)
@@ -82,45 +76,46 @@ const oeffnungszeitenController = {
   
       const output = [];
   
-      // 🔹 Gruppierung & Ausgabe
+      // 🔥 JETZT: EIN OBJEKT PRO KATEGORIE
       for (const catKey of Object.keys(tmp)) {
         const tage = tmp[catKey];
         const patternGroups = {};
   
         for (const wt of Object.keys(tage)) {
           const times = tage[wt];
-  
-          const geschlossen = times.length === 0;
-          const pattern = geschlossen
-            ? "geschlossen"
-            : times.map(t => `${t.von} – ${t.bis}`).join("|");
+          const pattern =
+            times.length === 0
+              ? "geschlossen"
+              : times.map(t => `${t.von} – ${t.bis}`).join("|");
   
           if (!patternGroups[pattern]) patternGroups[pattern] = [];
           patternGroups[pattern].push(wt);
         }
   
-        for (const pattern of Object.keys(patternGroups)) {
-          const days = patternGroups[pattern];
-          const geschlossen = pattern === "geschlossen";
+        const eintraege = [];
   
-          output.push({
-            kategorie: catKey === "__DEFAULT__" ? null : catKey,
-            wochentage: compressDays(days),
-            geschlossen,
-            zeiten: geschlossen ? ["geschlossen"] : pattern.split("|"),
+        for (const pattern of Object.keys(patternGroups)) {
+          eintraege.push({
+            wochentage: compressDays(patternGroups[pattern]),
+            geschlossen: pattern === "geschlossen",
+            zeiten: pattern === "geschlossen" ? ["geschlossen"] : pattern.split("|"),
           });
         }
+  
+        output.push({
+          kategorie: catKey === "__DEFAULT__" ? null : catKey,
+          eintraege,
+        });
       }
   
       res.status(200).json(output);
   
     } catch (err) {
       console.error("Fehler beim Abrufen der Öffnungszeiten:", err);
-      res.status(500).json({
-        error: "Fehler beim Abrufen der Öffnungszeiten.",
-      });
+      res.status(500).json({ error: "Fehler beim Abrufen der Öffnungszeiten." });
     }
   },
+  
   
   // 🔹 Zeitblock hinzufügen
   addZeitblock: async (req, res) => {
