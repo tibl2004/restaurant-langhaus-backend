@@ -16,38 +16,50 @@ const oeffnungszeitenController = {
     });
   },
 
-
   getOeffnungszeiten: async (req, res) => {
     try {
       const [rows] = await pool.query(
-        "SELECT * FROM oeffnungszeiten ORDER BY FIELD(wochentag,'Mo','Di','Mi','Do','Fr','Sa','So'), kategorie, von"
+        `SELECT * 
+         FROM oeffnungszeiten 
+         ORDER BY 
+           FIELD(wochentag,'Mo','Di','Mi','Do','Fr','Sa','So'),
+           kategorie,
+           von`
       );
   
-      const order = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+      const WOCHEN_ORDER = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   
-      // Sekunden entfernen: HH:MM:SS -> HH:MM
-      const fmt = (s) => s ? s.slice(0,5) : s;
+      // HH:MM:SS -> HH:MM
+      const fmt = (time) => (time ? time.slice(0, 5) : null);
   
-      // Zwischenspeicher: { kategorie -> { wochentag -> [ {von,bis} ] } }
+      // { kategorieKey -> { wochentag -> [ {von,bis} ] } }
       const tmp = {};
   
+      // 🔹 Datensammlung
       for (const row of rows) {
-        const cat = row.kategorie || "";
+        const catKey =
+          row.kategorie && row.kategorie.trim() !== ""
+            ? row.kategorie.trim()
+            : "__DEFAULT__";
+  
         const wt = row.wochentag;
   
-        if (!tmp[cat]) tmp[cat] = {};
-        if (!tmp[cat][wt]) tmp[cat][wt] = [];
+        if (!tmp[catKey]) tmp[catKey] = {};
+        if (!tmp[catKey][wt]) tmp[catKey][wt] = [];
   
         if (row.von && row.bis) {
-          tmp[cat][wt].push({ von: fmt(row.von), bis: fmt(row.bis) });
+          tmp[catKey][wt].push({
+            von: fmt(row.von),
+            bis: fmt(row.bis),
+          });
         }
       }
   
-      const output = [];
-  
-      // Tage zusammenfassen zu Bereichen (Mo–Sa)
-      const compressDays = (daysArray) => {
-        const sorted = daysArray.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      // 🔹 Hilfsfunktion: Mo–Fr zusammenfassen
+      const compressDays = (days) => {
+        const sorted = [...days].sort(
+          (a, b) => WOCHEN_ORDER.indexOf(a) - WOCHEN_ORDER.indexOf(b)
+        );
   
         const ranges = [];
         let start = sorted[0];
@@ -55,45 +67,47 @@ const oeffnungszeitenController = {
   
         for (let i = 1; i < sorted.length; i++) {
           const curr = sorted[i];
-          if (order.indexOf(curr) === order.indexOf(prev) + 1) {
+          if (WOCHEN_ORDER.indexOf(curr) === WOCHEN_ORDER.indexOf(prev) + 1) {
             prev = curr;
-            continue;
+          } else {
+            ranges.push(start === prev ? start : `${start} – ${prev}`);
+            start = curr;
+            prev = curr;
           }
-          ranges.push(start === prev ? start : `${start} – ${prev}`);
-          start = curr;
-          prev = curr;
         }
+  
         ranges.push(start === prev ? start : `${start} – ${prev}`);
         return ranges;
       };
   
-      for (const cat of Object.keys(tmp)) {
-        const tage = tmp[cat];
+      const output = [];
+  
+      // 🔹 Gruppierung & Ausgabe
+      for (const catKey of Object.keys(tmp)) {
+        const tage = tmp[catKey];
         const patternGroups = {};
   
         for (const wt of Object.keys(tage)) {
           const times = tage[wt];
   
-          const isClosed = times.length === 0;
-          const pattern = isClosed
+          const geschlossen = times.length === 0;
+          const pattern = geschlossen
             ? "geschlossen"
-            : times.map(t => `${t.von} – ${t.bis}`).join("|"); // Sekunden schon entfernt
+            : times.map(t => `${t.von} – ${t.bis}`).join("|");
   
           if (!patternGroups[pattern]) patternGroups[pattern] = [];
           patternGroups[pattern].push(wt);
         }
   
-        // Gruppierte Tage
         for (const pattern of Object.keys(patternGroups)) {
           const days = patternGroups[pattern];
           const geschlossen = pattern === "geschlossen";
-          const zeiten = geschlossen ? ["geschlossen"] : pattern.split("|");
   
           output.push({
-            kategorie: cat || null,
+            kategorie: catKey === "__DEFAULT__" ? null : catKey,
             wochentage: compressDays(days),
             geschlossen,
-            zeiten
+            zeiten: geschlossen ? ["geschlossen"] : pattern.split("|"),
           });
         }
       }
@@ -102,7 +116,9 @@ const oeffnungszeitenController = {
   
     } catch (err) {
       console.error("Fehler beim Abrufen der Öffnungszeiten:", err);
-      res.status(500).json({ error: "Fehler beim Abrufen der Öffnungszeiten." });
+      res.status(500).json({
+        error: "Fehler beim Abrufen der Öffnungszeiten.",
+      });
     }
   },
   
