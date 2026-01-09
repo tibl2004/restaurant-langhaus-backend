@@ -16,7 +16,12 @@ router.use(oeffnungszeitenController.authenticateToken);
 
 // 🔹 Neue Öffnungszeit anlegen ODER aktualisieren
 router.post("/", oeffnungszeitenController.addZeitblock);
-router.put("/", oeffnungszeitenController.addZeitblock);
+// 🔹 PUT: Zeitblock updaten
+router.put("/:id", oeffnungszeitenController.updateZeitblock);
+
+// 🔹 GET: Alle Öffnungszeiten für Bearbeiten (unkomprimiert pro Kategorie)
+router.get("/edit", oeffnungszeitenController.getOeffzeitenForEdit);
+
 
 // 🔹 Öffnungszeit löschen
 router.delete("/:id", oeffnungszeitenController.deleteZeitblock);

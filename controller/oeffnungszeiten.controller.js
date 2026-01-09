@@ -116,6 +116,76 @@ const oeffnungszeitenController = {
     }
   },
   
+  // 🔹 Alle Öffnungszeiten für Bearbeiten (unkomprimiert pro Kategorie)
+getOeffzeitenForEdit: async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT * 
+       FROM oeffnungszeiten
+       ORDER BY kategorie, FIELD(wochentag,'Mo','Di','Mi','Do','Fr','Sa','So'), von`
+    );
+
+    const tmp = {};
+
+    for (const row of rows) {
+      const catKey = row.kategorie?.trim() || "__DEFAULT__"; // "__DEFAULT__" für Restaurant
+      if (!tmp[catKey]) tmp[catKey] = [];
+      tmp[catKey].push({
+        id: row.id,
+        wochentag: row.wochentag,
+        von: row.von,
+        bis: row.bis,
+      });
+    }
+
+    res.status(200).json(tmp);
+  } catch (err) {
+    console.error("Fehler beim Abrufen der Öffnungszeiten für Bearbeiten:", err);
+    res.status(500).json({ error: "Fehler beim Abrufen der Öffnungszeiten für Bearbeiten" });
+  }
+}, 
+
+// 🔹 Zeitblock updaten (PUT /oeffnungszeiten/:id)
+updateZeitblock: async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { wochentag, von, bis, kategorie } = req.body;
+
+    // Prüfen, ob der Eintrag existiert
+    const [rows] = await pool.query(
+      "SELECT * FROM oeffnungszeiten WHERE id = ?",
+      [id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: "Eintrag nicht gefunden" });
+
+    // Update durchführen
+    await pool.query(
+      "UPDATE oeffnungszeiten SET wochentag = ?, von = ?, bis = ?, kategorie = ? WHERE id = ?",
+      [
+        wochentag || rows[0].wochentag,
+        von || null,
+        bis || null,
+        kategorie || rows[0].kategorie,
+        id
+      ]
+    );
+
+    // Den aktualisierten Zeitblock zurückgeben
+    const [updatedRows] = await pool.query(
+      "SELECT * FROM oeffnungszeiten WHERE id = ?",
+      [id]
+    );
+
+    res.status(200).json({
+      message: "Zeitblock aktualisiert",
+      zeitblock: updatedRows[0] // liefert exakt den bearbeiteten Eintrag zurück
+    });
+  } catch (err) {
+    console.error("Fehler beim Aktualisieren:", err);
+    res.status(500).json({ error: "Fehler beim Aktualisieren" });
+  }
+},
+
   
   // 🔹 Zeitblock hinzufügen
   addZeitblock: async (req, res) => {
