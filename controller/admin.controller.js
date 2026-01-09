@@ -38,18 +38,26 @@ const adminController = {
 
  
 
-  // 🔹 Admin Profil abrufen
   getProfile: async (req, res) => {
     try {
       const { id } = req.user;
-      const [rows] = await pool.query("SELECT id, username, email FROM admin WHERE id = ?", [id]);
-      if (rows.length === 0) return res.status(404).json({ error: "Admin nicht gefunden." });
+  
+      const [rows] = await pool.query(
+        "SELECT id, username, email FROM admin WHERE id = ?",
+        [id]
+      );
+  
+      if (!rows.length) {
+        return res.status(404).json({ error: "Admin nicht gefunden" });
+      }
+  
       res.json(rows[0]);
     } catch (err) {
       console.error(err);
-      res.status(500).json({ error: "Fehler beim Abrufen des Profils." });
+      res.status(500).json({ error: "Profil konnte nicht geladen werden" });
     }
   },
+  
 
   // 🔹 Admin Profil aktualisieren
   updateProfile: async (req, res) => {
