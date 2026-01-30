@@ -133,49 +133,30 @@ createItem: async (req, res) => {
   });
 },
 
-  // 📄 Speisekarte + andere Hauptkarten
 getSpeisekarte: async (req, res) => {
   try {
     const menu = [];
 
-    // 1️⃣ Feste Karte "Speisekarte" abrufen
-    const [[speisekarte]] = await pool.query(
-      `SELECT * FROM menu_card WHERE name = ? LIMIT 1`,
-      ["Speisekarte"]
+    // 🔥 ALLE Karten, die im Hauptmenü sein sollen
+    const [cards] = await pool.query(
+      `SELECT * FROM menu_card 
+       WHERE include_in_main_menu = 1
+       ORDER BY start_date ASC`
     );
 
-    if (speisekarte) {
+    for (const card of cards) {
       const [categories] = await pool.query(
-        `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`,
-        [speisekarte.id]
-      );
-
-      for (const cat of categories) {
-        const [items] = await pool.query(
-          `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`,
-          [cat.id]
-        );
-        cat.items = items;
-      }
-
-      menu.push({ card: speisekarte, categories });
-    }
-
-    // 2️⃣ Alle anderen Karten mit include_in_main_menu = 1 abrufen
-    const [otherCards] = await pool.query(
-      `SELECT * FROM menu_card WHERE include_in_main_menu = 1 AND name != ? ORDER BY start_date ASC`,
-      ["Speisekarte"]
-    );
-
-    for (const card of otherCards) {
-      const [categories] = await pool.query(
-        `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`,
+        `SELECT * FROM menu_category 
+         WHERE menu_card_id = ? 
+         ORDER BY id ASC`,
         [card.id]
       );
 
       for (const cat of categories) {
         const [items] = await pool.query(
-          `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`,
+          `SELECT * FROM menu_item 
+           WHERE category_id = ? 
+           ORDER BY nummer ASC`,
           [cat.id]
         );
         cat.items = items;
@@ -185,12 +166,12 @@ getSpeisekarte: async (req, res) => {
     }
 
     res.json(menu);
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Fehler beim Laden der Speisekarte" });
   }
 },
+
 
 // 📂 Alle Kategorien einer Karte abrufen
 getCategoriesByCardId: async (req, res) => {
