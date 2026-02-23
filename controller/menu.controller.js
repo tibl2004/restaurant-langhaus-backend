@@ -3,15 +3,17 @@ const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");
-const cron = require("node-cron"); // ← hier hinzufügen
+const cron = require("node-cron");
 
-// Ordner für PDFs
-// Ordner für automatisierte PDFs (gleicher wie Multer)
+// 📂 Ordner für PDFs
 const uploadsDir = path.join(__dirname, "../uploads/menu");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
 const menuController = {
 
-  // 🔐 JWT Auth
+  /* =====================================================
+     🔐 JWT AUTH
+  ===================================================== */
   authenticateToken: (req, res, next) => {
     const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(" ")[1];
@@ -24,29 +26,21 @@ const menuController = {
     });
   },
 
-// 🆕 Karten
-createCard: async (req, res) => {
-  const { name, start_date, end_date, include_in_main_menu } = req.body;
-  if (!name) return res.status(400).json({ error: "Name erforderlich" });
+  /* =====================================================
+     🆕 KARTEN
+  ===================================================== */
+  createCard: async (req, res) => {
+    const { name, start_date, end_date, include_in_main_menu } = req.body;
+    if (!name) return res.status(400).json({ error: "Name erforderlich" });
 
-  // pdf_path ist nach name, wird beim Erstellen auf NULL gesetzt
-  const [result] = await pool.query(
-    `INSERT INTO menu_card (name, pdf_path, start_date, end_date, include_in_main_menu) 
-     VALUES (?, ?, ?, ?, ?)`,
-    [name, null, start_date || null, end_date || null, include_in_main_menu ? 1 : 0]
-  );
+    const [result] = await pool.query(
+      `INSERT INTO menu_card (name, pdf_path, start_date, end_date, include_in_main_menu) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [name, null, start_date || null, end_date || null, include_in_main_menu ? 1 : 0]
+    );
 
-  res.json({
-    id: result.insertId,
-    name,
-    start_date,
-    end_date,
-    include_in_main_menu,
-    pdf_path: null // noch kein PDF vorhanden
-  });
-},
-
-
+    res.json({ id: result.insertId, name });
+  },
 
   getAllCards: async (req, res) => {
     const [cards] = await pool.query(`SELECT * FROM menu_card ORDER BY start_date ASC`);
@@ -64,7 +58,8 @@ createCard: async (req, res) => {
         end_date = COALESCE(?, end_date),
         include_in_main_menu = COALESCE(?, include_in_main_menu)
       WHERE id = ?`,
-      [name || null, start_date || null, end_date || null, include_in_main_menu !== undefined ? (include_in_main_menu ? 1 : 0) : null, cardId]
+      [name || null, start_date || null, end_date || null,
+       include_in_main_menu !== undefined ? (include_in_main_menu ? 1 : 0) : null, cardId]
     );
 
     res.json({ success: true });
@@ -76,207 +71,225 @@ createCard: async (req, res) => {
     res.json({ success: true });
   },
 
- // 📂 Kategorien
-createCategory: async (req, res) => {
-  const { cardId } = req.params; // Menü-Karten-ID aus URL
-  const { name } = req.body;
+  /* =====================================================
+     📂 KATEGORIEN
+  ===================================================== */
+  createCategory: async (req, res) => {
+    const { cardId } = req.params;
+    const { name } = req.body;
 
-  if (!cardId || !name) return res.status(400).json({ error: "Card ID und Name erforderlich" });
+    const [result] = await pool.query(
+      `INSERT INTO menu_category (menu_card_id, name) VALUES (?, ?)`,
+      [cardId, name]
+    );
 
-  const [result] = await pool.query(
-    `INSERT INTO menu_category (menu_card_id, name) VALUES (?, ?)`,
-    [cardId, name]
-  );
+    res.json({ id: result.insertId, name });
+  },
 
-  res.json({
-    id: result.insertId,
-    menu_card_id: cardId,
-    name
-  });
-},
+  getCategoriesByCard: async (req, res) => {
+    const { cardId } = req.params;
+    const [categories] = await pool.query(
+      `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id`,
+      [cardId]
+    );
+    res.json(categories);
+  },
 
+  /* =====================================================
+     🍽️ ITEMS
+  ===================================================== */
+  createItem: async (req, res) => {
+    const { categoryId } = req.params;
+    const { name, zutaten, preis, nummer } = req.body;
 
+    if (!categoryId || !name || !preis)
+      return res.status(400).json({ error: "Category ID, Name und Preis erforderlich" });
 
-// 🍽️ Items
-createItem: async (req, res) => {
-  const { categoryId } = req.params; // Kategorie-ID aus URL
-  const { name, zutaten, preis, nummer } = req.body;
+    let itemNumber = nummer;
+    if (itemNumber === undefined || itemNumber === null) {
+      const [[{ max }]] = await pool.query(
+        `SELECT COALESCE(MAX(nummer), 0) AS max FROM menu_item WHERE category_id = ?`,
+        [categoryId]
+      );
+      itemNumber = max + 1;
+    }
 
-  if (!categoryId || !name || !preis)
-    return res.status(400).json({ error: "Category ID, Name und Preis erforderlich" });
+    const [result] = await pool.query(
+      `INSERT INTO menu_item (category_id, nummer, name, zutaten, preis) VALUES (?, ?, ?, ?, ?)`,
+      [categoryId, itemNumber, name, zutaten || "", preis]
+    );
 
-  let itemNumber = nummer;
+    res.json({ id: result.insertId, nummer: itemNumber });
+  },
 
-  // Wenn keine Nummer angegeben wird, automatisch max + 1
-  if (itemNumber === undefined || itemNumber === null) {
-    const [[{ max }]] = await pool.query(
-      `SELECT COALESCE(MAX(nummer), 0) AS max FROM menu_item WHERE category_id = ?`,
+  getItemsByCategory: async (req, res) => {
+    const { categoryId } = req.params;
+    const [items] = await pool.query(
+      `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer`,
       [categoryId]
     );
-    itemNumber = max + 1;
-  }
+    res.json(items);
+  },
 
-  // Item einfügen
-  const [result] = await pool.query(
-    `INSERT INTO menu_item (category_id, nummer, name, zutaten, preis) VALUES (?, ?, ?, ?, ?)`,
-    [categoryId, itemNumber, name, zutaten || "", preis]
-  );
+  updateItem: async (req, res) => {
+    const { itemId } = req.params;
+    const { name, zutaten, preis, nummer } = req.body;
 
-  // Rückgabe inkl. nummer
-  res.json({
-    id: result.insertId,
-    category_id: categoryId,
-    nummer: itemNumber,
-    name,
-    zutaten,
-    preis,
-  });
-},
-
-getSpeisekarte: async (req, res) => {
-  try {
-    const menu = [];
-
-    // 🔥 ALLE Karten, die im Hauptmenü sein sollen
-    const [cards] = await pool.query(
-      `SELECT * FROM menu_card 
-       WHERE include_in_main_menu = 1
-       ORDER BY start_date ASC`
+    await pool.query(
+      `UPDATE menu_item SET 
+        name = COALESCE(?, name),
+        zutaten = COALESCE(?, zutaten),
+        preis = COALESCE(?, preis),
+        nummer = COALESCE(?, nummer)
+      WHERE id = ?`,
+      [name || null, zutaten || null, preis || null, nummer || null, itemId]
     );
 
-    for (const card of cards) {
+    res.json({ success: true });
+  },
+
+  deleteItem: async (req, res) => {
+    const { itemId } = req.params;
+    await pool.query(`DELETE FROM menu_item WHERE id = ?`, [itemId]);
+    res.json({ success: true });
+  },
+
+  /* =====================================================
+     📄 HAUPTSPEISEKARTE
+  ===================================================== */
+  getSpeisekarte: async (req, res) => {
+    try {
+      const menu = [];
+      // Nur Karten, die include_in_main_menu=1 haben
+      const [cards] = await pool.query(
+        `SELECT * FROM menu_card WHERE include_in_main_menu = 1 ORDER BY start_date ASC`
+      );
+
+      for (const card of cards) {
+        const [categories] = await pool.query(
+          `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id`,
+          [card.id]
+        );
+
+        for (const cat of categories) {
+          const [items] = await pool.query(
+            `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer`,
+            [cat.id]
+          );
+          cat.items = items;
+        }
+
+        menu.push({ card, categories });
+      }
+
+      res.json(menu);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Fehler beim Laden der Speisekarte" });
+    }
+  },
+
+  /* =====================================================
+     📄 PDF GENERIEREN
+  ===================================================== */
+  generatePdfForCard: async (card) => {
+    try {
+      // prüfen ob Änderungen vorhanden
+      const [[check]] = await pool.query(`
+        SELECT 
+          GREATEST(
+            IFNULL((SELECT MAX(updated_at) FROM menu_card WHERE id=?), '1970-01-01'),
+            IFNULL((SELECT MAX(updated_at) FROM menu_category WHERE menu_card_id=?), '1970-01-01'),
+            IFNULL((SELECT MAX(updated_at) FROM menu_item 
+              WHERE category_id IN (
+                SELECT id FROM menu_category WHERE menu_card_id=?
+              )), '1970-01-01')
+          ) AS last_change,
+          last_generated_at
+        FROM menu_card WHERE id=?`,
+        [card.id, card.id, card.id, card.id]
+      );
+
+      if (check.last_generated_at &&
+          new Date(check.last_change) <= new Date(check.last_generated_at)) {
+        console.log(`⏭️ Keine Änderungen für ${card.name}`);
+        return;
+      }
+
+      // Daten laden
       const [categories] = await pool.query(
-        `SELECT * FROM menu_category 
-         WHERE menu_card_id = ? 
-         ORDER BY id ASC`,
+        `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id`,
         [card.id]
       );
 
       for (const cat of categories) {
         const [items] = await pool.query(
-          `SELECT * FROM menu_item 
-           WHERE category_id = ? 
-           ORDER BY nummer ASC`,
+          `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer`,
           [cat.id]
         );
         cat.items = items;
       }
 
-      menu.push({ card, categories });
-    }
-
-    res.json(menu);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Fehler beim Laden der Speisekarte" });
-  }
-},
-
-
-// 📂 Alle Kategorien einer Karte abrufen
-getCategoriesByCardId: async (req, res) => {
-  const { cardId } = req.params;
-
-  try {
-    // 1️⃣ Prüfen, ob die Karte existiert
-    const [[card]] = await pool.query(`SELECT * FROM menu_card WHERE id = ?`, [cardId]);
-    if (!card) return res.status(404).json({ error: "Karte nicht gefunden" });
-
-    // 2️⃣ Kategorien abrufen
-    const [categories] = await pool.query(
-      `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`,
-      [cardId]
-    );
-
-    // Optional: Items pro Kategorie mit abrufen
-    for (const cat of categories) {
-      const [items] = await pool.query(
-        `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`,
-        [cat.id]
-      );
-      cat.items = items;
-    }
-
-    res.json({ card, categories });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Fehler beim Laden der Kategorien" });
-  }
-},
-
-
-// Funktion, die PDF für eine Karte generiert
-generatePdfForCard: async (card) => { 
-  try {
-    // Kategorien und Items abrufen
-    const [categories] = await pool.query(
-      `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id ASC`,
-      [card.id]
-    );
-
-    for (const cat of categories) {
-      const [items] = await pool.query(
-        `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer ASC`,
-        [cat.id]
-      );
-      cat.items = items;
-    }
-
-    // Alten PDF löschen, wenn vorhanden
-    if (card.pdf_path) {
-      const oldPath = path.join(__dirname, "../", card.pdf_path);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
-
-    // PDF-Dateiname, passend zum Multer-Stil
-    const fileName =
-      "menu_" +
-      Date.now() +
-      "_" +
-      Math.random().toString(36).substring(7) +
-      ".pdf";
-
-    const pdfPath = path.join(uploadsDir, fileName);
-    const doc = new PDFDocument();
-
-    doc.pipe(fs.createWriteStream(pdfPath));
-
-    doc.fontSize(20).text(`Karte: ${card.name}`, { underline: true });
-    doc.moveDown();
-
-    for (const cat of categories) {
-      doc.fontSize(16).text(cat.name, { bold: true });
-      for (const item of cat.items) {
-        doc.fontSize(12).text(`- ${item.name}: ${item.preis}€`);
+      // alten PDF löschen
+      if (card.pdf_path) {
+        const oldPath = path.join(__dirname, "../", card.pdf_path);
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
       }
+
+      // PDF erstellen
+      const fileName = `menu_card_${card.id}.pdf`;
+      const pdfPath = path.join(uploadsDir, fileName);
+
+      const doc = new PDFDocument({ margin: 40 });
+      doc.pipe(fs.createWriteStream(pdfPath));
+
+      doc.fontSize(22).text(card.name, { align: "center" });
       doc.moveDown();
+
+      for (const cat of categories) {
+        doc.fontSize(16).text(cat.name, { underline: true });
+        doc.moveDown(0.5);
+
+        for (const item of cat.items) {
+          doc.fontSize(12).text(
+            `${item.nummer}. ${item.name} .......... Fr. ${Number(item.preis).toFixed(2)}`
+          );
+          if (item.zutaten) {
+            doc.fontSize(9).fillColor("gray").text(item.zutaten);
+            doc.fillColor("black");
+          }
+        }
+        doc.moveDown();
+      }
+
+      doc.end();
+
+      const relativePath = `/uploads/menu/${fileName}`;
+      await pool.query(
+        `UPDATE menu_card SET pdf_path=?, last_generated_at=NOW() WHERE id=?`,
+        [relativePath, card.id]
+      );
+
+      console.log(`✅ PDF aktualisiert: ${card.name}`);
+
+    } catch (err) {
+      console.error("❌ PDF Fehler:", err);
     }
-
-    doc.end();
-
-    // Relativer Pfad für DB
-    const relativePath = `/uploads/menu/${fileName}`;
-    await pool.query(`UPDATE menu_card SET pdf_path = ? WHERE id = ?`, [
-      relativePath,
-      card.id,
-    ]);
-
-    console.log(`✅ PDF für Karte "${card.name}" aktualisiert: ${relativePath}`);
-  } catch (err) {
-    console.error(`❌ Fehler beim Generieren der PDF für Karte "${card.name}":`, err);
   }
-}
-
 };
-cron.schedule("*/2 * * * *", async () => { 
-    try {
+
+/* =====================================================
+   🕒 CRONJOB: PDFs prüfen
+===================================================== */
+cron.schedule("*/5 * * * *", async () => {
+  try {
     const [cards] = await pool.query(`SELECT * FROM menu_card`);
     for (const card of cards) {
-      await menuController.generatePdfForCard(card); // <-- hier
+      await menuController.generatePdfForCard(card);
     }
-    console.log("✅ PDFs wurden automatisch aktualisiert");
+    console.log("🕒 PDF Check abgeschlossen");
   } catch (err) {
-    console.error("❌ Fehler beim Abrufen der Karten für PDF-Generierung:", err);
+    console.error("❌ Cron Fehler:", err);
   }
 });
 

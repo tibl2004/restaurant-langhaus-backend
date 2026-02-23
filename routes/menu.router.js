@@ -2,79 +2,69 @@ const express = require("express");
 const router = express.Router();
 const menuController = require("../controller/menu.controller");
 
-const pool = require("../database/index"); // ✅ FEHLT → JETZT FIX
+// 🔐 JWT Middleware
+const auth = menuController.authenticateToken;
 
-
-// 🔐 Middleware für JWT-Auth
-const authenticate = menuController.authenticateToken;
-
-
-// 🔗 Aktuelle PDF-URL einer Karte abrufen
-router.get("/cards/:cardId/pdf", async (req, res) => {
-  try {
-    const { cardId } = req.params;
-
-    const [[card]] = await pool.query(
-      `SELECT id, name, pdf_path FROM menu_card WHERE id = ? LIMIT 1`,
-      [cardId]
-    );
-
-    if (!card || !card.pdf_path) {
-      return res.status(404).json({ error: "PDF noch nicht generiert" });
-    }
-
-    // 🔥 DAS ist die URL, die du im Browser öffnen kannst
-    res.json({
-      cardId: card.id,
-      name: card.name,
-      pdf_url: card.pdf_path
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Fehler beim Abrufen der PDF" });
-  }
-});
-
-
-// =====================
-// Karten (menu_card)
-// =====================
+/* =====================================================
+   🆕 KARTEN
+===================================================== */
+// Karte erstellen
+router.post("/cards", auth, menuController.createCard);
 
 // Alle Karten abrufen
 router.get("/cards", menuController.getAllCards);
 
-// Karte erstellen
-router.post("/cards", authenticate, menuController.createCard);
-
-// Karte aktualisieren
-router.put("/cards/:cardId", authenticate, menuController.updateCard);
+// Karte updaten
+router.put("/cards/:cardId", auth, menuController.updateCard);
 
 // Karte löschen
-router.delete("/cards/:cardId", authenticate, menuController.deleteCard);
+router.delete("/cards/:cardId", auth, menuController.deleteCard);
 
+/* =====================================================
+   📂 KATEGORIEN
+===================================================== */
+// Kategorie erstellen
+router.post("/cards/:cardId/categories", auth, menuController.createCategory);
 
-// =====================
-// Kategorien (menu_category)
-// =====================
+// Kategorien einer Karte abrufen (optional)
+router.get("/cards/:cardId/categories", menuController.getCategoriesByCard);
 
-// Kategorie erstellen (cardId aus params)
-router.post("/cards/:cardId/categories", authenticate, menuController.createCategory);
+/* =====================================================
+   🍽️ ITEMS
+===================================================== */
+// Item erstellen
+router.post("/categories/:categoryId/items", auth, menuController.createItem);
 
-// Alle Kategorien + Items einer Karte abrufen (NEU!)
-router.get("/card/:cardId/categories", menuController.getCategoriesByCardId);
-// =====================
-// Items (menu_item)
-// =====================
+// Items einer Kategorie abrufen (optional)
+router.get("/categories/:categoryId/items", menuController.getItemsByCategory);
 
-// Item erstellen (categoryId aus params)
-router.post("/categories/:categoryId/items", authenticate, menuController.createItem);
+// Item updaten
+router.put("/items/:itemId", auth, menuController.updateItem);
 
-// =====================
-// Speisekarte + andere Hauptkarten
-// =====================
+// Item löschen
+router.delete("/items/:itemId", auth, menuController.deleteItem);
 
-// Feste Karte "Speisekarte" + weitere Hauptkarten
-router.get("/speisekarte", menuController.getSpeisekarte);
+/* =====================================================
+   📄 HAUPTSPEISEKARTE
+===================================================== */
+// Alle Karten + Kategorien + Items für Hauptspeisekarte
+router.get("/main-menu", menuController.getSpeisekarte);
+
+/* =====================================================
+   📄 PDF GENERIERUNG
+===================================================== */
+// PDF für eine bestimmte Karte erstellen (Admin)
+router.post("/cards/:cardId/pdf", auth, async (req, res) => {
+  try {
+    const [cards] = await pool.query(`SELECT * FROM menu_card WHERE id = ?`, [req.params.cardId]);
+    if (!cards.length) return res.status(404).json({ error: "Karte nicht gefunden" });
+
+    await menuController.generatePdfForCard(cards[0]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "PDF Generierung fehlgeschlagen" });
+  }
+});
 
 module.exports = router;
