@@ -47,6 +47,51 @@ const menuController = {
     res.json(cards);
   },
 
+  getCardPdf: async (req, res) => {
+    try {
+      const { cardId } = req.params;
+  
+      const [cards] = await pool.query(
+        "SELECT pdf_path, name FROM menu_card WHERE id = ?",
+        [cardId]
+      );
+  
+      if (!cards.length) {
+        return res.status(404).json({ error: "Karte nicht gefunden" });
+      }
+  
+      const card = cards[0];
+  
+      // ❗ Falls noch kein PDF existiert → generieren
+      if (!card.pdf_path) {
+        await menuController.generatePdfForCard({ id: cardId, name: card.name });
+        const [updated] = await pool.query(
+          "SELECT pdf_path FROM menu_card WHERE id = ?",
+          [cardId]
+        );
+        card.pdf_path = updated[0].pdf_path;
+      }
+  
+      const filePath = path.join(__dirname, "..", card.pdf_path);
+  
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "PDF Datei fehlt" });
+      }
+  
+      // 🔥 PDF an Browser senden
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${card.name}.pdf"`
+      );
+  
+      fs.createReadStream(filePath).pipe(res);
+  
+    } catch (err) {
+      console.error("PDF GET Fehler:", err);
+      res.status(500).json({ error: "PDF konnte nicht geladen werden" });
+    }
+  },
   updateCard: async (req, res) => {
     const { cardId } = req.params;
     const { name, start_date, end_date, include_in_main_menu } = req.body;
