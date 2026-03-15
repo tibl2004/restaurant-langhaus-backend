@@ -64,7 +64,7 @@ const corsOptions = {
 
     const allowedOrigins = [
       process.env.FRONTEND_URL,
-      "https://langhaus.vercel.app/"
+      "https://langhaus.vercel.app"
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
