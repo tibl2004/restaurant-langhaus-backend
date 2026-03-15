@@ -20,7 +20,6 @@ router.put("/cards/:cardId", auth, menuController.updateCard);
 // Karte löschen
 router.delete("/cards/:cardId", auth, menuController.deleteCard);
 
-router.get("/cards/:cardId/pdf", menuController.getCardPdf);
 
 /* =====================================================
    📂 KATEGORIEN
