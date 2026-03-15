@@ -7,44 +7,38 @@ const bcrypt = require("bcrypt");
 ENV CHECK
 ========================
 */
-
 if (!process.env.JWT_SECRET) {
-  console.error("JWT_SECRET fehlt!");
+  console.error("⚠️ JWT_SECRET fehlt! Bitte in der .env setzen!");
   process.exit(1);
 }
 
+/*
+========================
+LOGIN CONTROLLER
+========================
+*/
 const loginController = {
 
   /*
   ========================
-  TOKEN AUTH
+  TOKEN AUTH (JWT)
   ========================
   */
-
   authenticateToken: (req, res, next) => {
-
     const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(" ")[1];
 
     if (!token) {
-      return res.status(401).json({
-        error: "Kein Token bereitgestellt"
-      });
+      return res.status(401).json({ error: "Kein Token bereitgestellt" });
     }
 
     jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-
       if (err) {
-        return res.status(403).json({
-          error: "Token ungültig"
-        });
+        return res.status(403).json({ error: "Token ungültig" });
       }
-
       req.user = user;
       next();
-
     });
-
   },
 
   /*
@@ -52,11 +46,8 @@ const loginController = {
   ADMIN LOGIN
   ========================
   */
-
   login: async (req, res) => {
-
     try {
-
       const { username, password } = req.body;
 
       if (!username || !password) {
@@ -65,38 +56,30 @@ const loginController = {
         });
       }
 
+      // 🔹 Admin aus DB laden
       const [rows] = await pool.query(
         "SELECT id, username, passwort FROM admin WHERE username=? LIMIT 1",
         [username]
       );
 
       if (rows.length === 0) {
-        return res.status(401).json({
-          error: "Login fehlgeschlagen"
-        });
+        return res.status(401).json({ error: "Login fehlgeschlagen" });
       }
 
       const admin = rows[0];
 
+      // 🔹 Passwort prüfen
       const validPassword = await bcrypt.compare(password, admin.passwort);
-
       if (!validPassword) {
-        return res.status(401).json({
-          error: "Login fehlgeschlagen"
-        });
+        return res.status(401).json({ error: "Login fehlgeschlagen" });
       }
 
-      /*
-      ========================
-      JWT TOKEN
-      ========================
-      */
-
+      // 🔹 JWT TOKEN erstellen
       const token = jwt.sign(
         {
           id: admin.id,
           username: admin.username,
-          userTypes: ["admin"]   // 👈 wichtig für deine Admin-Prüfung
+          userTypes: ["admin"] // 👈 Admin-Prüfung
         },
         process.env.JWT_SECRET,
         {
@@ -111,15 +94,9 @@ const loginController = {
       });
 
     } catch (err) {
-
       console.error("Login Fehler:", err);
-
-      res.status(500).json({
-        error: "Server Fehler beim Login"
-      });
-
+      res.status(500).json({ error: "Server Fehler beim Login" });
     }
-
   }
 
 };
