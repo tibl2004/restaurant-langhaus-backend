@@ -2,21 +2,42 @@ const pool = require("../database/index");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 
+/*
+========================
+ENV CHECK
+========================
+*/
+
+if (!process.env.JWT_SECRET) {
+  console.error("JWT_SECRET fehlt!");
+  process.exit(1);
+}
+
 const loginController = {
 
-  authenticateToken: (req,res,next)=>{
+  /*
+  ========================
+  TOKEN AUTH
+  ========================
+  */
+
+  authenticateToken: (req, res, next) => {
 
     const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(" ")[1];
 
-    if(!token){
-      return res.status(401).json({error:"Kein Token bereitgestellt"});
+    if (!token) {
+      return res.status(401).json({
+        error: "Kein Token bereitgestellt"
+      });
     }
 
-    jwt.verify(token,process.env.JWT_SECRET,(err,user)=>{
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
 
-      if(err){
-        return res.status(403).json({error:"Token ungültig"});
+      if (err) {
+        return res.status(403).json({
+          error: "Token ungültig"
+        });
       }
 
       req.user = user;
@@ -26,59 +47,75 @@ const loginController = {
 
   },
 
-  login: async(req,res)=>{
+  /*
+  ========================
+  ADMIN LOGIN
+  ========================
+  */
 
-    try{
+  login: async (req, res) => {
 
-      const {username,password} = req.body;
+    try {
 
-      if(!username || !password){
+      const { username, password } = req.body;
+
+      if (!username || !password) {
         return res.status(400).json({
-          error:"Benutzername und Passwort erforderlich"
+          error: "Benutzername und Passwort erforderlich"
         });
       }
 
       const [rows] = await pool.query(
-        "SELECT * FROM admin WHERE username=?",
+        "SELECT id, username, passwort FROM admin WHERE username=? LIMIT 1",
         [username]
       );
 
-      if(rows.length===0){
-        return res.status(401).json({error:"Login fehlgeschlagen"});
+      if (rows.length === 0) {
+        return res.status(401).json({
+          error: "Login fehlgeschlagen"
+        });
       }
 
       const admin = rows[0];
 
-      const valid = await bcrypt.compare(password,admin.passwort);
+      const validPassword = await bcrypt.compare(password, admin.passwort);
 
-      if(!valid){
-        return res.status(401).json({error:"Login fehlgeschlagen"});
+      if (!validPassword) {
+        return res.status(401).json({
+          error: "Login fehlgeschlagen"
+        });
       }
 
-      const token = jwt.sign({
+      /*
+      ========================
+      JWT TOKEN
+      ========================
+      */
 
-        id:admin.id,
-        username:admin.username,
-        role:"admin"
-
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn:process.env.JWT_EXPIRES,
-        issuer:"restaurant-backend"
-      });
+      const token = jwt.sign(
+        {
+          id: admin.id,
+          username: admin.username,
+          userTypes: ["admin"]   // 👈 wichtig für deine Admin-Prüfung
+        },
+        process.env.JWT_SECRET,
+        {
+          expiresIn: process.env.JWT_EXPIRES || "8h",
+          issuer: "restaurant-backend"
+        }
+      );
 
       res.json({
-        message:"Login erfolgreich",
+        message: "Login erfolgreich",
         token
       });
 
-    }catch(err){
+    } catch (err) {
 
-      console.error(err);
+      console.error("Login Fehler:", err);
 
       res.status(500).json({
-        error:"Server Fehler beim Login"
+        error: "Server Fehler beim Login"
       });
 
     }
