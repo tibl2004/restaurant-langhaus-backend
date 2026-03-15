@@ -1,65 +1,184 @@
-const express = require('express');
-const http = require('http');
-const WebSocket = require('ws');
-const cors = require('cors');
-const dotenv = require('dotenv');
-const path = require("path");
+require("dotenv").config();
 
-dotenv.config();
+const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
+const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const compression = require("compression");
+const morgan = require("morgan");
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
- 
-app.use(
-    "/uploads",
-    express.static(path.join(__dirname, "uploads"))
-  );
-  
-  
 
-// 🔹 CORS für alle erlauben (kein corsOptions nötig)
-app.use(cors());
+/*
+========================
+SECURITY MIDDLEWARE
+========================
+*/
 
-// 🔹 Limits hochsetzen
-app.use(express.urlencoded({ limit: "150mb", extended: true }));
-app.use(express.json({ limit: "150mb" }));
+app.use(helmet());
+app.use(morgan("combined"));
+app.use(compression());
 
-// 🔹 Routen importieren
-const loginRouter = require('./routes/login.router');
-const newsletterRouter = require('./routes/newsletter.router');
-const homeRouter = require('./routes/home.router');
-const anfrageRouter = require('./routes/anfrage.router');
-const logoRouter = require('./routes/logo.router');
-const adminRouter = require('./routes/admin.router');
-const galerieRouter = require('./routes/galerie.router');
-const oeffnungszeitenRouter = require('./routes/oeffnungszeiten.router');
-const menuRouter = require('./routes/menu.router');
+/*
+========================
+GLOBAL RATE LIMIT
+========================
+*/
 
-
-// 🔹 Routen zuweisen
-app.use('/api/login', loginRouter);
-app.use('/api/newsletter', newsletterRouter);
-app.use('/api/home', homeRouter);
-app.use('/api/anfrage', anfrageRouter);
-app.use('/api/logo', logoRouter);
-app.use('/api/admin', adminRouter);
-app.use('/api/galerie', galerieRouter);
-app.use('/api/oeffnungszeiten', oeffnungszeitenRouter);
-app.use('/api/menu', menuRouter);
-
-
-// 🔹 Preflight für alle Anfragen (optional, aber sicher)
-app.options('*', cors());
-
-// 🔹 Fehlerbehandlung
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).send('Etwas ist schiefgelaufen!');
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
-// 🔹 Server starten
+app.use(globalLimiter);
+
+/*
+========================
+LOGIN BRUTE FORCE LIMIT
+========================
+*/
+
+const loginLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  message: "Zu viele Loginversuche. Bitte später erneut versuchen."
+});
+
+app.use("/api/login", loginLimiter);
+
+/*
+========================
+CORS SECURITY
+========================
+*/
+
+const corsOptions = {
+  origin: function (origin, callback) {
+
+    const allowedOrigins = [
+      process.env.FRONTEND_URL,
+      "http://localhost:3000"
+    ];
+
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS blockiert"));
+    }
+
+  },
+  methods: ["GET","POST","PUT","DELETE"],
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
+/*
+========================
+BODY LIMIT (DoS Schutz)
+========================
+*/
+
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
+app.use(express.json({ limit: "10mb" }));
+
+/*
+========================
+STATIC FILES
+========================
+*/
+
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "uploads"), {
+    maxAge: "7d",
+    index: false
+  })
+);
+
+/*
+========================
+WEBSOCKET SECURITY
+========================
+*/
+
+wss.on("connection", (ws, req) => {
+
+  const ip = req.socket.remoteAddress;
+  console.log("WebSocket Verbindung:", ip);
+
+  ws.on("message", (message) => {
+
+    if (message.length > 5000) {
+      ws.close();
+    }
+
+  });
+
+});
+
+/*
+========================
+ROUTES
+========================
+*/
+
+app.use("/api/login", require("./routes/login.router"));
+app.use("/api/newsletter", require("./routes/newsletter.router"));
+app.use("/api/home", require("./routes/home.router"));
+app.use("/api/anfrage", require("./routes/anfrage.router"));
+app.use("/api/logo", require("./routes/logo.router"));
+app.use("/api/admin", require("./routes/admin.router"));
+app.use("/api/galerie", require("./routes/galerie.router"));
+app.use("/api/oeffnungszeiten", require("./routes/oeffnungszeiten.router"));
+app.use("/api/menu", require("./routes/menu.router"));
+
+/*
+========================
+404 HANDLER
+========================
+*/
+
+app.use((req,res)=>{
+  res.status(404).json({
+    error:"Route nicht gefunden"
+  });
+});
+
+/*
+========================
+ERROR HANDLER
+========================
+*/
+
+app.use((err, req, res, next) => {
+
+  console.error(err);
+
+  res.status(err.status || 500).json({
+    error: process.env.NODE_ENV === "production"
+      ? "Server Fehler"
+      : err.message
+  });
+
+});
+
+/*
+========================
+SERVER START
+========================
+*/
+
 const PORT = process.env.PORT || 5000;
+
 server.listen(PORT, () => {
-    console.log(`Server läuft auf Port ${PORT}....`);
+  console.log(`Server läuft auf Port ${PORT}`);
 });
