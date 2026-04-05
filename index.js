@@ -14,6 +14,7 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
+app.set("trust proxy", 1); // 🔥 WICHTIG für Render/Vercel
 /*
 ========================
 SECURITY MIDDLEWARE
