@@ -133,7 +133,6 @@ ROUTES
 */
 
 app.use("/api/login", require("./routes/login.router"));
-app.use("/api/newsletter", require("./routes/newsletter.router"));
 app.use("/api/home", require("./routes/home.router"));
 app.use("/api/anfrage", require("./routes/anfrage.router"));
 app.use("/api/logo", require("./routes/logo.router"));
