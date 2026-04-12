@@ -134,12 +134,12 @@ ROUTES
 
 app.use("/api/login", require("./routes/login.router"));
 app.use("/api/home", require("./routes/home.router"));
-app.use("/api/anfrage", require("./routes/anfrage.router"));
 app.use("/api/logo", require("./routes/logo.router"));
 app.use("/api/admin", require("./routes/admin.router"));
 app.use("/api/galerie", require("./routes/galerie.router"));
 app.use("/api/oeffnungszeiten", require("./routes/oeffnungszeiten.router"));
 app.use("/api/menu", require("./routes/menu.router"));
+app.use("/api/betriebsferien", require("./routes/betriebsferien.router.js"));
 
 /*
 ========================
