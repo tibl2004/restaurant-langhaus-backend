@@ -31,7 +31,7 @@ const betriebsferienController = {
      ADMIN – HINZUFÜGEN
   ========================= */
   addBetriebsferien: [
-    authenticateToken,
+    auth,
     async (req, res) => {
       try {
         if (!req.user.userTypes.includes("admin")) {
@@ -62,7 +62,7 @@ const betriebsferienController = {
      ADMIN – UPDATE
   ========================= */
   updateBetriebsferien: [
-    authenticateToken,
+    auth,
     async (req, res) => {
       try {
         if (!req.user.userTypes.includes("admin")) {
@@ -104,7 +104,7 @@ const betriebsferienController = {
      ADMIN – DELETE
   ========================= */
   deleteBetriebsferien: [
-    authenticateToken,
+    auth,
     async (req, res) => {
       try {
         if (!req.user.userTypes.includes("admin")) {
