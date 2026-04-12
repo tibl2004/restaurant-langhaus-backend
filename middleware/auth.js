@@ -1,26 +1,35 @@
 const jwt = require("jsonwebtoken");
 
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
+module.exports = (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
 
-  if (!token) {
-    return res.status(401).json({ error: "Nicht autorisiert" });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ error: "Token ungültig" });
+    if (!authHeader) {
+      return res.status(401).json({ error: "Kein Token vorhanden" });
     }
 
-    req.user = {
-      id: decoded.id,
-      username: decoded.username,
-      userTypes: decoded.userTypes || []
-    };
+    // 🔥 unterstützt: "Bearer token" ODER nur token
+    let token = authHeader;
+
+    if (authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    }
+
+    if (!token) {
+      return res.status(401).json({ error: "Token fehlt" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    req.user = decoded;
 
     next();
-  });
-};
 
-module.exports = authenticateToken;
+  } catch (err) {
+    console.error("AUTH ERROR:", err.message);
+
+    return res.status(403).json({
+      error: "Token ungültig"
+    });
+  }
+};
