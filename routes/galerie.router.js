@@ -13,6 +13,7 @@ router.get(
 // 🔹 Mehrere Bilder hochladen
 router.post(
   "/upload",
+  auth,
   galerieController.uploadGalerieBilder
 );
 

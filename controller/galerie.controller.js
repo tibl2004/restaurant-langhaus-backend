@@ -56,7 +56,6 @@ const galerieController = {
   },
 
   uploadGalerieBilder: [
-    auth,
     upload.array("bilder", 20),
 
     async (req, res) => {
@@ -64,13 +63,7 @@ const galerieController = {
         console.log("USER:", req.user);
         console.log("FILES:", req.files);
 
-        if (!req.user) {
-          return res.status(401).json({ error: "Nicht eingeloggt" });
-        }
-
-        if (!req.user.userTypes.includes("admin")) {
-          return res.status(403).json({ error: "Nur Admins erlaubt" });
-        }
+      
 
         if (!req.files || req.files.length === 0) {
           return res.status(400).json({ error: "Keine Bilder erhalten" });
