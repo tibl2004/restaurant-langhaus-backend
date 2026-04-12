@@ -12,7 +12,6 @@ router.get("/", oeffnungszeitenController.getOeffnungszeiten);
 // 🔒 ADMIN-BEREICH
 // Token-Middleware für alle folgenden Routen
 // ----------------------------------------------------------
-router.use(oeffnungszeitenController.authenticateToken);
 
 // 🔹 Neue Öffnungszeit anlegen ODER aktualisieren
 router.post("/", oeffnungszeitenController.addZeitblock);

@@ -1,9 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const menuController = require("../controller/menu.controller");
-
+const auth = require("../middleware/auth");
 // 🔐 JWT Middleware
-const auth = menuController.authenticateToken;
 
 /* =====================================================
    🆕 KARTEN

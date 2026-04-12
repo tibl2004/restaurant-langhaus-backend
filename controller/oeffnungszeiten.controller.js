@@ -1,21 +1,40 @@
 const pool = require("../database/index");
 const jwt = require("jsonwebtoken");
 
+/* =========================
+   AUTH MIDDLEWARE (FIXED)
+========================= */
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ error: "Nicht autorisiert" });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ error: "Token ungültig" });
+    }
+
+    req.user = {
+      id: decoded.id,
+      username: decoded.username,
+      userTypes: decoded.userTypes || []
+    };
+
+    next();
+  });
+};
+
+/* =========================
+   CONTROLLER
+========================= */
 const oeffnungszeitenController = {
 
-  // 🔹 JWT Auth Middleware
-  authenticateToken: (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.status(401).json({ error: 'Kein Token bereitgestellt.' });
-
-    jwt.verify(token, 'secretKey', (err, user) => {
-      if (err) return res.status(403).json({ error: 'Ungültiger Token.' });
-      req.user = user;
-      next();
-    });
-  },
-
+  /* =========================
+     PUBLIC – GET
+  ========================= */
   getOeffnungszeiten: async (req, res) => {
     try {
       const [rows] = await pool.query(
@@ -26,22 +45,21 @@ const oeffnungszeitenController = {
            kategorie,
            von`
       );
-  
+
       const WOCHEN_ORDER = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
       const fmt = (t) => (t ? t.slice(0, 5) : null);
-  
-      // { kategorieKey -> { wochentag -> [zeiten] } }
+
       const tmp = {};
-  
+
       for (const row of rows) {
         const catKey =
           row.kategorie && row.kategorie.trim() !== ""
             ? row.kategorie.trim()
             : "__DEFAULT__";
-  
+
         if (!tmp[catKey]) tmp[catKey] = {};
         if (!tmp[catKey][row.wochentag]) tmp[catKey][row.wochentag] = [];
-  
+
         if (row.von && row.bis) {
           tmp[catKey][row.wochentag].push({
             von: fmt(row.von),
@@ -49,16 +67,16 @@ const oeffnungszeitenController = {
           });
         }
       }
-  
+
       const compressDays = (days) => {
         const sorted = [...days].sort(
           (a, b) => WOCHEN_ORDER.indexOf(a) - WOCHEN_ORDER.indexOf(b)
         );
-  
+
         const ranges = [];
         let start = sorted[0];
         let prev = sorted[0];
-  
+
         for (let i = 1; i < sorted.length; i++) {
           const curr = sorted[i];
           if (WOCHEN_ORDER.indexOf(curr) === WOCHEN_ORDER.indexOf(prev) + 1) {
@@ -69,31 +87,30 @@ const oeffnungszeitenController = {
             prev = curr;
           }
         }
-  
+
         ranges.push(start === prev ? start : `${start} – ${prev}`);
         return ranges;
       };
-  
+
       const output = [];
-  
-      // 🔥 JETZT: EIN OBJEKT PRO KATEGORIE
+
       for (const catKey of Object.keys(tmp)) {
         const tage = tmp[catKey];
         const patternGroups = {};
-  
+
         for (const wt of Object.keys(tage)) {
           const times = tage[wt];
           const pattern =
             times.length === 0
               ? "geschlossen"
               : times.map(t => `${t.von} – ${t.bis}`).join("|");
-  
+
           if (!patternGroups[pattern]) patternGroups[pattern] = [];
           patternGroups[pattern].push(wt);
         }
-  
+
         const eintraege = [];
-  
+
         for (const pattern of Object.keys(patternGroups)) {
           eintraege.push({
             wochentage: compressDays(patternGroups[pattern]),
@@ -101,140 +118,138 @@ const oeffnungszeitenController = {
             zeiten: pattern === "geschlossen" ? ["geschlossen"] : pattern.split("|"),
           });
         }
-  
+
         output.push({
           kategorie: catKey === "__DEFAULT__" ? null : catKey,
           eintraege,
         });
       }
-  
+
       res.status(200).json(output);
-  
+
     } catch (err) {
-      console.error("Fehler beim Abrufen der Öffnungszeiten:", err);
-      res.status(500).json({ error: "Fehler beim Abrufen der Öffnungszeiten." });
-    }
-  },
-  
-  // 🔹 Alle Öffnungszeiten für Bearbeiten (unkomprimiert pro Kategorie)
-getOeffzeitenForEdit: async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      `SELECT * 
-       FROM oeffnungszeiten
-       ORDER BY kategorie, FIELD(wochentag,'Mo','Di','Mi','Do','Fr','Sa','So'), von`
-    );
-
-    const tmp = {};
-
-    for (const row of rows) {
-      const catKey = row.kategorie?.trim() || "__DEFAULT__"; // "__DEFAULT__" für Restaurant
-      if (!tmp[catKey]) tmp[catKey] = [];
-      tmp[catKey].push({
-        id: row.id,
-        wochentag: row.wochentag,
-        von: row.von,
-        bis: row.bis,
-      });
-    }
-
-    res.status(200).json(tmp);
-  } catch (err) {
-    console.error("Fehler beim Abrufen der Öffnungszeiten für Bearbeiten:", err);
-    res.status(500).json({ error: "Fehler beim Abrufen der Öffnungszeiten für Bearbeiten" });
-  }
-}, 
-
-// 🔹 Zeitblock updaten (PUT /oeffnungszeiten/:id)
-updateZeitblock: async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { wochentag, von, bis, kategorie } = req.body;
-
-    // Prüfen, ob der Eintrag existiert
-    const [rows] = await pool.query(
-      "SELECT * FROM oeffnungszeiten WHERE id = ?",
-      [id]
-    );
-    if (rows.length === 0) return res.status(404).json({ error: "Eintrag nicht gefunden" });
-
-    // Update durchführen
-    await pool.query(
-      "UPDATE oeffnungszeiten SET wochentag = ?, von = ?, bis = ?, kategorie = ? WHERE id = ?",
-      [
-        wochentag || rows[0].wochentag,
-        von || null,
-        bis || null,
-        kategorie || rows[0].kategorie,
-        id
-      ]
-    );
-
-    // Den aktualisierten Zeitblock zurückgeben
-    const [updatedRows] = await pool.query(
-      "SELECT * FROM oeffnungszeiten WHERE id = ?",
-      [id]
-    );
-
-    res.status(200).json({
-      message: "Zeitblock aktualisiert",
-      zeitblock: updatedRows[0] // liefert exakt den bearbeiteten Eintrag zurück
-    });
-  } catch (err) {
-    console.error("Fehler beim Aktualisieren:", err);
-    res.status(500).json({ error: "Fehler beim Aktualisieren" });
-  }
-},
-
-  
-  // 🔹 Zeitblock hinzufügen
-  addZeitblock: async (req, res) => {
-    try {
-      const { wochentag, von, bis, kategorie } = req.body;
-
-      if (!wochentag) return res.status(400).json({ error: "Wochentag erforderlich." });
-
-      const closed = (!von || !bis); 
-
-      const cat = kategorie || null;
-
-      await pool.query(
-        "INSERT INTO oeffnungszeiten (wochentag, von, bis, kategorie) VALUES (?, ?, ?, ?)",
-        [
-          wochentag,
-          closed ? null : von,
-          closed ? null : bis,
-          cat
-        ]
-      );
-
-      res.status(201).json({ message: "Zeitblock hinzugefügt" });
-    } catch (err) {
-      console.error("Fehler beim Hinzufügen:", err);
-      res.status(500).json({ error: "Fehler beim Speichern." });
+      console.error(err);
+      res.status(500).json({ error: "Fehler beim Abrufen" });
     }
   },
 
-  // 🔹 Zeitblock löschen
-  deleteZeitblock: async (req, res) => {
-    try {
-      const { id } = req.params;
+  /* =========================
+     ADMIN – EDIT DATA
+  ========================= */
+  getOeffzeitenForEdit: [
+    authenticateToken,
+    async (req, res) => {
+      try {
+        if (!req.user.userTypes.includes("admin")) {
+          return res.status(403).json({ error: "Nur Admin erlaubt" });
+        }
 
-      const [result] = await pool.query(
-        "DELETE FROM oeffnungszeiten WHERE id = ?",
-        [id]
-      );
+        const [rows] = await pool.query(
+          `SELECT * 
+           FROM oeffnungszeiten
+           ORDER BY kategorie, FIELD(wochentag,'Mo','Di','Mi','Do','Fr','Sa','So'), von`
+        );
 
-      if (result.affectedRows === 0)
-        return res.status(404).json({ error: "Eintrag nicht gefunden." });
+        const tmp = {};
 
-      res.status(200).json({ message: "Zeitblock gelöscht" });
+        for (const row of rows) {
+          const catKey = row.kategorie?.trim() || "__DEFAULT__";
+          if (!tmp[catKey]) tmp[catKey] = [];
+          tmp[catKey].push(row);
+        }
 
-    } catch (err) {
-      console.error("Fehler beim Löschen:", err);
-      res.status(500).json({ error: "Fehler beim Löschen." });
+        res.json(tmp);
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Fehler beim Laden" });
+      }
     }
-  }
+  ],
+
+  updateZeitblock: [
+    authenticateToken,
+    async (req, res) => {
+      try {
+        if (!req.user.userTypes.includes("admin")) {
+          return res.status(403).json({ error: "Nur Admin erlaubt" });
+        }
+
+        const { id } = req.params;
+        const { wochentag, von, bis, kategorie } = req.body;
+
+        const [rows] = await pool.query(
+          "SELECT * FROM oeffnungszeiten WHERE id = ?",
+          [id]
+        );
+
+        if (!rows.length) {
+          return res.status(404).json({ error: "Nicht gefunden" });
+        }
+
+        await pool.query(
+          "UPDATE oeffnungszeiten SET wochentag=?, von=?, bis=?, kategorie=? WHERE id=?",
+          [
+            wochentag || rows[0].wochentag,
+            von || null,
+            bis || null,
+            kategorie || rows[0].kategorie,
+            id
+          ]
+        );
+
+        res.json({ message: "Aktualisiert" });
+
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Fehler" });
+      }
+    }
+  ],
+
+  addZeitblock: [
+    authenticateToken,
+    async (req, res) => {
+      try {
+        if (!req.user.userTypes.includes("admin")) {
+          return res.status(403).json({ error: "Nur Admin erlaubt" });
+        }
+
+        const { wochentag, von, bis, kategorie } = req.body;
+
+        await pool.query(
+          "INSERT INTO oeffnungszeiten (wochentag, von, bis, kategorie) VALUES (?, ?, ?, ?)",
+          [wochentag, von || null, bis || null, kategorie || null]
+        );
+
+        res.status(201).json({ message: "Hinzugefügt" });
+
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Fehler" });
+      }
+    }
+  ],
+
+  deleteZeitblock: [
+    authenticateToken,
+    async (req, res) => {
+      try {
+        if (!req.user.userTypes.includes("admin")) {
+          return res.status(403).json({ error: "Nur Admin erlaubt" });
+        }
+
+        const { id } = req.params;
+
+        await pool.query("DELETE FROM oeffnungszeiten WHERE id = ?", [id]);
+
+        res.json({ message: "Gelöscht" });
+
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Fehler" });
+      }
+    }
+  ]
 };
 
 module.exports = oeffnungszeitenController;
