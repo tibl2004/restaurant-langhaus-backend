@@ -8,7 +8,9 @@ const auth = require("../middleware/auth");
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, "../uploads/galerie");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     cb(null, dir);
   },
   filename: (req, file, cb) => {
@@ -36,6 +38,7 @@ const upload = multer({
 /* ================= CONTROLLER ================= */
 const galerieController = {
 
+  /* ================= GET GALERIE ================= */
   async getGalerie(req, res) {
     try {
       const [rows] = await pool.query(
@@ -55,61 +58,75 @@ const galerieController = {
     }
   },
 
+  /* ================= UPLOAD ================= */
   uploadGalerieBilder: [
+    auth,
     upload.array("bilder", 20),
-  
+
     async (req, res) => {
       try {
         console.log("FILES:", req.files);
-  
+
         if (!req.files || req.files.length === 0) {
           return res.status(400).json({ error: "Keine Bilder erhalten" });
         }
-  
+
         for (const file of req.files) {
           await pool.query(
             "INSERT INTO galerie (bild) VALUES (?)",
             ["/uploads/galerie/" + file.filename]
           );
         }
-  
+
         res.status(201).json({ message: "Upload erfolgreich" });
-  
+
       } catch (err) {
         console.error("UPLOAD ERROR:", err);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message || "Upload fehlgeschlagen" });
       }
     }
   ],
 
-  deleteGalerieBild: async (req, res) => {
-    try {
-      const { id } = req.params;
-  
-      const [rows] = await pool.query(
-        "SELECT bild FROM galerie WHERE id = ?",
-        [id]
-      );
-  
-      if (!rows.length) {
-        return res.status(404).json({ error: "Bild nicht gefunden" });
+  /* ================= DELETE ================= */
+  deleteGalerieBild: [
+    auth,
+
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        const [rows] = await pool.query(
+          "SELECT bild FROM galerie WHERE id = ?",
+          [id]
+        );
+
+        if (!rows.length) {
+          return res.status(404).json({ error: "Bild nicht gefunden" });
+        }
+
+        let filePath = rows[0].bild;
+
+        // 🔥 Slash fix
+        filePath = filePath.startsWith("/")
+          ? filePath.slice(1)
+          : filePath;
+
+        const fullPath = path.join(__dirname, "..", filePath);
+
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+
+        await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
+
+        res.json({ message: "Bild gelöscht" });
+
+      } catch (err) {
+        console.error("DELETE ERROR:", err);
+        res.status(500).json({ error: "Löschen fehlgeschlagen" });
       }
-  
-      const filePath = path.join(__dirname, "..", rows[0].bild);
-  
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-  
-      await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
-  
-      res.json({ message: "Bild gelöscht" });
-  
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Löschen fehlgeschlagen" });
     }
-  },
+  ]
 };
 
 module.exports = galerieController;
