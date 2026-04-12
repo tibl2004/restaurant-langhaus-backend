@@ -57,32 +57,29 @@ const galerieController = {
 
   uploadGalerieBilder: [
     upload.array("bilder", 20),
-
+  
     async (req, res) => {
       try {
-        console.log("USER:", req.user);
         console.log("FILES:", req.files);
-
-      
-
+  
         if (!req.files || req.files.length === 0) {
           return res.status(400).json({ error: "Keine Bilder erhalten" });
         }
-
+  
         for (const file of req.files) {
           await pool.query(
             "INSERT INTO galerie (bild) VALUES (?)",
             ["/uploads/galerie/" + file.filename]
           );
         }
-
+  
         res.status(201).json({ message: "Upload erfolgreich" });
-
+  
       } catch (err) {
         console.error("UPLOAD ERROR:", err);
-        res.status(500).json({ error: err.message || "Upload fehlgeschlagen" });
+        res.status(500).json({ error: err.message });
       }
-    },
+    }
   ],
 
   deleteGalerieBild: async (req, res) => {

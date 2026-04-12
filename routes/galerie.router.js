@@ -10,7 +10,6 @@ router.get(
   galerieController.getGalerie
 );
 
-// 🔹 Mehrere Bilder hochladen
 router.post(
   "/upload",
   auth,
