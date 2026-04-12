@@ -44,11 +44,14 @@ const galerieController = {
       const [rows] = await pool.query(
         "SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC"
       );
-
+  
       res.json(
         rows.map((r) => ({
           id: r.id,
+  
+          // 🔥 FIX: immer sauberer Pfad
           bild: `${req.protocol}://${req.get("host")}${r.bild}`,
+  
           erstellt_am: r.erstellt_am,
         }))
       );
@@ -57,7 +60,6 @@ const galerieController = {
       res.status(500).json({ error: "Galerie konnte nicht geladen werden" });
     }
   },
-
   /* ================= UPLOAD ================= */
   uploadGalerieBilder: [
     auth,

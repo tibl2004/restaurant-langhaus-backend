@@ -99,10 +99,7 @@ STATIC FILES
 
 app.use(
   "/uploads",
-  express.static(path.join(__dirname, "uploads"), {
-    maxAge: "7d",
-    index: false
-  })
+  express.static(path.join(__dirname, "uploads"))
 );
 
 /*
