@@ -2,18 +2,13 @@ const pool = require("../database/index");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const auth = require("../middleware/auth.js");
+const auth = require("../middleware/auth");
 
-
-/* =========================
-   MULTER CONFIG
-========================= */
+/* ================= MULTER ================= */
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, "../uploads/galerie");
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
   filename: (req, file, cb) => {
@@ -28,7 +23,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// ✅ OPTIONAL: nur Bilder erlauben
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
@@ -39,13 +33,9 @@ const upload = multer({
   },
 });
 
-/* =========================
-   CONTROLLER
-========================= */
+/* ================= CONTROLLER ================= */
 const galerieController = {
-  /* =========================
-     PUBLIC – GALERIE LADEN
-  ========================= */
+
   async getGalerie(req, res) {
     try {
       const [rows] = await pool.query(
@@ -65,16 +55,19 @@ const galerieController = {
     }
   },
 
-  /* =========================
-     ADMIN – UPLOAD
-  ========================= */
   uploadGalerieBilder: [
     auth,
     upload.array("bilder", 20),
 
     async (req, res) => {
       try {
-        // ✅ FIX: funktioniert jetzt
+        console.log("USER:", req.user);
+        console.log("FILES:", req.files);
+
+        if (!req.user) {
+          return res.status(401).json({ error: "Nicht eingeloggt" });
+        }
+
         if (!req.user.userTypes.includes("admin")) {
           return res.status(403).json({ error: "Nur Admins erlaubt" });
         }
@@ -91,51 +84,10 @@ const galerieController = {
         }
 
         res.status(201).json({ message: "Upload erfolgreich" });
+
       } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Upload fehlgeschlagen" });
-      }
-    },
-  ],
-
-  /* =========================
-     DELETE
-  ========================= */
-  deleteGalerieBild: [
-    auth,
-
-    async (req, res) => {
-      try {
-        if (
-          !req.user.userTypes.includes("admin") &&
-          !req.user.userTypes.includes("vorstand")
-        ) {
-          return res.status(403).json({ error: "Keine Berechtigung" });
-        }
-
-        const { id } = req.params;
-
-        const [rows] = await pool.query(
-          "SELECT bild FROM galerie WHERE id = ?",
-          [id]
-        );
-
-        if (!rows.length) {
-          return res.status(404).json({ error: "Bild nicht gefunden" });
-        }
-
-        const filePath = path.join(__dirname, "../", rows[0].bild);
-
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-
-        await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
-
-        res.json({ message: "Bild gelöscht" });
-      } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Löschen fehlgeschlagen" });
+        console.error("UPLOAD ERROR:", err);
+        res.status(500).json({ error: err.message || "Upload fehlgeschlagen" });
       }
     },
   ],
