@@ -91,6 +91,35 @@ const galerieController = {
       }
     },
   ],
+
+  deleteGalerieBild: async (req, res) => {
+    try {
+      const { id } = req.params;
+  
+      const [rows] = await pool.query(
+        "SELECT bild FROM galerie WHERE id = ?",
+        [id]
+      );
+  
+      if (!rows.length) {
+        return res.status(404).json({ error: "Bild nicht gefunden" });
+      }
+  
+      const filePath = path.join(__dirname, "..", rows[0].bild);
+  
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+  
+      await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
+  
+      res.json({ message: "Bild gelöscht" });
+  
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Löschen fehlgeschlagen" });
+    }
+  },
 };
 
 module.exports = galerieController;
