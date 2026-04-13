@@ -99,9 +99,8 @@ STATIC FILES
 
 app.use(
   "/uploads",
-  express.static(path.join(__dirname, "uploads"))
+  express.static(path.join(process.cwd(), "uploads"))
 );
-
 /*
 ========================
 WEBSOCKET SECURITY
