@@ -177,28 +177,42 @@ const menuController = {
   getSpeisekarte: async (req, res) => {
     try {
       const menu = [];
+  
       const [cards] = await pool.query(
-        `SELECT * FROM menu_card WHERE include_in_main_menu = 1 ORDER BY start_date ASC`
+        `SELECT * FROM menu_card 
+         WHERE include_in_main_menu = 1 
+         ORDER BY start_date ASC`
       );
-
+  
       for (const card of cards) {
         const [categories] = await pool.query(
-          `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id`,
+          `SELECT * FROM menu_category 
+           WHERE menu_card_id = ? 
+           ORDER BY id`,
           [card.id]
         );
-
+  
         for (const cat of categories) {
           const [items] = await pool.query(
-            `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer`,
+            `SELECT * FROM menu_item 
+             WHERE category_id = ? 
+             ORDER BY nummer`,
             [cat.id]
           );
+  
+          // ✅ HIER: Cordon Bleu Hinweis automatisch hinzufügen
+          if (cat.name && cat.name.toLowerCase().includes("cordon")) {
+            cat.hinweis = "Alle Cordon Bleu mit Pommes frites und frischem Gemüse. Auch ohne Panade erhältlich. Fleisch nach Wahl: Rindsfilet Fr. 42.00 / Kalb Fr. 41.00 / Schwein Fr. 35.00";
+          }
+  
           cat.items = items;
         }
-
+  
         menu.push({ card, categories });
       }
-
+  
       res.json(menu);
+  
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Fehler beim Laden der Speisekarte" });
