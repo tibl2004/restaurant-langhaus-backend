@@ -84,15 +84,25 @@ const menuController = {
   createCategory: async (req, res) => {
     const { cardId } = req.params;
     const { name } = req.body;
-
+  
+    // 👉 Standard-Hinweis für Cordon Bleu
+    let hinweis = null;
+  
+    if (name && name.toLowerCase().includes("cordon")) {
+      hinweis = "Alle Cordon Bleu mit Pommes frites und frischem Gemüse. Auch ohne Panade erhältlich. Fleisch nach Wahl: Rindsfilet Fr. 42.00 / Kalb Fr. 41.00 / Schwein Fr. 35.00";
+    }
+  
     const [result] = await pool.query(
       `INSERT INTO menu_category (menu_card_id, name) VALUES (?, ?)`,
       [cardId, name]
     );
-
-    res.json({ id: result.insertId, name });
+  
+    res.json({
+      id: result.insertId,
+      name,
+      hinweis // 👉 wird direkt zurückgegeben
+    });
   },
-
   getCategoriesByCard: async (req, res) => {
     const { cardId } = req.params;
     const [categories] = await pool.query(
