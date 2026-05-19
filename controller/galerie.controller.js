@@ -8,20 +8,23 @@ const auth = require("../middleware/auth");
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, "../uploads/galerie");
+
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
+
     cb(null, dir);
   },
+
   filename: (req, file, cb) => {
-    cb(
-      null,
+    const uniqueName =
       "galerie_" +
-        Date.now() +
-        "_" +
-        Math.random().toString(36).slice(2) +
-        path.extname(file.originalname)
-    );
+      Date.now() +
+      "_" +
+      Math.random().toString(36).substring(2) +
+      path.extname(file.originalname);
+
+    cb(null, uniqueName);
   },
 });
 
@@ -29,7 +32,7 @@ const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Nur Bilder erlaubt"), false);
+      return cb(new Error("Nur Bilder erlaubt!"), false);
     }
     cb(null, true);
   },
@@ -38,58 +41,63 @@ const upload = multer({
 /* ================= CONTROLLER ================= */
 const galerieController = {
 
-  /* ================= GET GALERIE ================= */
+  /* ========== GET ========== */
   async getGalerie(req, res) {
     try {
       const [rows] = await pool.query(
         "SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC"
       );
-  
+
       res.json(
         rows.map((r) => ({
           id: r.id,
-  
-          // 🔥 FIX: immer sauberer Pfad
+
+          // FIXED URL
           bild: `${req.protocol}://${req.get("host")}${r.bild}`,
-  
+
           erstellt_am: r.erstellt_am,
         }))
       );
+
     } catch (err) {
       console.error(err);
-      res.status(500).json({ error: "Galerie konnte nicht geladen werden" });
+      res.status(500).json({ error: "Fehler beim Laden" });
     }
   },
-  /* ================= UPLOAD ================= */
+
+  /* ========== UPLOAD ========== */
   uploadGalerieBilder: [
     auth,
     upload.array("bilder", 20),
 
     async (req, res) => {
       try {
-        console.log("FILES:", req.files);
-
         if (!req.files || req.files.length === 0) {
           return res.status(400).json({ error: "Keine Bilder erhalten" });
         }
 
         for (const file of req.files) {
+          const dbPath = `/uploads/galerie/${file.filename}`;
+
           await pool.query(
             "INSERT INTO galerie (bild) VALUES (?)",
-            ["/uploads/galerie/" + file.filename]
+            [dbPath]
           );
         }
 
-        res.status(201).json({ message: "Upload erfolgreich" });
+        res.status(201).json({
+          message: "Upload erfolgreich",
+          count: req.files.length,
+        });
 
       } catch (err) {
         console.error("UPLOAD ERROR:", err);
-        res.status(500).json({ error: err.message || "Upload fehlgeschlagen" });
+        res.status(500).json({ error: "Upload fehlgeschlagen" });
       }
     }
   ],
 
-  /* ================= DELETE ================= */
+  /* ========== DELETE ========== */
   deleteGalerieBild: [
     auth,
 
@@ -103,15 +111,15 @@ const galerieController = {
         );
 
         if (!rows.length) {
-          return res.status(404).json({ error: "Bild nicht gefunden" });
+          return res.status(404).json({ error: "Nicht gefunden" });
         }
 
         let filePath = rows[0].bild;
 
-        // 🔥 Slash fix
-        filePath = filePath.startsWith("/")
-          ? filePath.slice(1)
-          : filePath;
+        // remove leading slash
+        if (filePath.startsWith("/")) {
+          filePath = filePath.slice(1);
+        }
 
         const fullPath = path.join(__dirname, "..", filePath);
 
@@ -121,11 +129,11 @@ const galerieController = {
 
         await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
 
-        res.json({ message: "Bild gelöscht" });
+        res.json({ message: "Gelöscht" });
 
       } catch (err) {
-        console.error("DELETE ERROR:", err);
-        res.status(500).json({ error: "Löschen fehlgeschlagen" });
+        console.error(err);
+        res.status(500).json({ error: "Delete fehlgeschlagen" });
       }
     }
   ]
