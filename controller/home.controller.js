@@ -2,54 +2,63 @@ const pool = require("../database/index"); // mysql2/promise
 const jwt = require("jsonwebtoken");
 
 
-// 🔹 Home Rotation: alle 12h nächstes Galerie-Bild
 const rotateHomeImageIfNeeded = async () => {
+
   const now = new Date();
 
-  // Prüfen, ob schon ein Eintrag in home_rotation existiert
-  const [rotationRows] = await pool.query(
+  const [[rotation]] = await pool.query(
     "SELECT * FROM home_rotation LIMIT 1"
   );
 
-  // 🟢 Erststart: noch keine Rotation → erstes Galerie-Bild nehmen
-  if (!rotationRows.length) {
-    const [first] = await pool.query(
+  // 🟢 FIRST RUN
+  if (!rotation) {
+
+    const [[first]] = await pool.query(
       "SELECT id FROM galerie ORDER BY id ASC LIMIT 1"
     );
-    if (!first.length) return null;
+
+    if (!first) return null;
 
     await pool.query(
       "INSERT INTO home_rotation (galerie_id, last_switch) VALUES (?, ?)",
-      [first[0].id, now]
+      [first.id, now]
     );
-    return first[0].id;
+
+    return first.id;
   }
 
-  const rotation = rotationRows[0];
   const lastSwitch = new Date(rotation.last_switch);
-  const diffHours = (now - lastSwitch) / 1000 / 60 / 60;
 
-  // Noch keine 12 Stunden vergangen → aktuelles Bild behalten
-  if (diffHours < 12) return rotation.galerie_id;
+  const hoursPassed =
+    (now.getTime() - lastSwitch.getTime()) /
+    1000 / 60 / 60;
 
-  // 🔁 Nächstes Galerie-Bild
-  const [next] = await pool.query(
+  // 🔥 24h CHECK
+  if (hoursPassed < 24) {
+    return rotation.galerie_id;
+  }
+
+  // 🔁 NEXT IMAGE (SORTED STABLE)
+  const [[next]] = await pool.query(
     "SELECT id FROM galerie WHERE id > ? ORDER BY id ASC LIMIT 1",
     [rotation.galerie_id]
   );
 
   let nextId;
-  if (next.length) {
-    nextId = next[0].id;
+
+  if (next) {
+    nextId = next.id;
   } else {
-    // Wenn Ende erreicht → wieder von vorne
-    const [first] = await pool.query(
+    const [[first]] = await pool.query(
       "SELECT id FROM galerie ORDER BY id ASC LIMIT 1"
     );
-    nextId = first[0].id;
+
+    nextId = first?.id;
   }
 
-  // Rotation aktualisieren
+  // ❗ SAFETY CHECK (WICHTIG)
+  if (!nextId) return rotation.galerie_id;
+
   await pool.query(
     "UPDATE home_rotation SET galerie_id = ?, last_switch = ?",
     [nextId, now]
@@ -89,32 +98,40 @@ const homeController = {
   // 🔹 Home Content abrufen
   getHomeContent: async (req, res) => {
     try {
-      // aktuelles Galerie-Bild ermitteln
+  
       const galerieId = await rotateHomeImageIfNeeded();
-
-      // Willkommenstext, Willkommenlink, Blinktext aus home_content
+  
       const [[home]] = await pool.query(
         "SELECT willkommen_text, willkommen_link, blinktext FROM home_content LIMIT 1"
       );
-
+  
       let bild = null;
+  
       if (galerieId) {
+  
         const [[img]] = await pool.query(
           "SELECT bild FROM galerie WHERE id = ?",
           [galerieId]
         );
+  
         if (img?.bild) {
-          // URL für Frontend
-          bild = `${req.protocol}://${req.get("host")}${img.bild.startsWith("/") ? "" : "/"}${img.bild}`;
+  
+          bild = `${req.protocol}://${req.get("host")}${img.bild}`;
         }
       }
-
+  
+      // 🔥 CRITICAL: NO CACHE (SONST BLEIBT BILD ALT)
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.set("Pragma", "no-cache");
+      res.set("Expires", "0");
+  
       res.status(200).json({
         bild,
         willkommenText: home?.willkommen_text || "",
         willkommenLink: home?.willkommen_link || "",
         blinkText: home?.blinktext || "",
       });
+  
     } catch (err) {
       console.error("Home Fehler:", err);
       res.status(500).json({ error: "Home konnte nicht geladen werden" });
