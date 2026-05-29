@@ -14,58 +14,39 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-app.set("trust proxy", 1); // 🔥 WICHTIG für Render/Vercel
-/*
-========================
-SECURITY MIDDLEWARE
-========================
-*/
+app.set("trust proxy", 1); // 🔥 Render / Proxy fix
 
+/* ================= SECURITY ================= */
 app.use(helmet());
 app.use(morgan("combined"));
 app.use(compression());
 
-/*
-========================
-GLOBAL RATE LIMIT
-========================
-*/
+/* ================= RATE LIMIT ================= */
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
 
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false
-});
+/* ================= LOGIN LIMIT ================= */
+app.use(
+  "/api/login",
+  rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 5,
+    message: "Zu viele Loginversuche. Bitte später erneut versuchen.",
+  })
+);
 
-app.use(globalLimiter);
-
-/*
-========================
-LOGIN BRUTE FORCE LIMIT
-========================
-*/
-
-const loginLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 5,
-  message: "Zu viele Loginversuche. Bitte später erneut versuchen."
-});
-
-app.use("/api/login", loginLimiter);
-
-/*
-========================
-CORS SECURITY
-========================
-*/
-
+/* ================= CORS ================= */
 const corsOptions = {
   origin: function (origin, callback) {
-
     const allowedOrigins = [
       process.env.FRONTEND_URL,
-      "https://langhaus.vercel.app"
+      "https://langhaus.vercel.app",
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
@@ -73,61 +54,45 @@ const corsOptions = {
     } else {
       callback(new Error("CORS blockiert"));
     }
-
   },
-  methods: ["GET","POST","PUT","DELETE"],
-  credentials: true
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
-/*
-========================
-BODY LIMIT (DoS Schutz)
-========================
-*/
-
+/* ================= BODY ================= */
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(express.json({ limit: "10mb" }));
 
-/*
-========================
-STATIC FILES
-========================
-*/
+/* ================= STATIC FILES ================= */
 
+/* 🔥 GALERIE IMAGES */
 app.use(
-  "/uploads",
-  express.static(path.join(process.cwd(), "uploads"))
+  "/api/galerie/uploads",
+  express.static(path.join(process.cwd(), "uploads/galerie"))
 );
-/*
-========================
-WEBSOCKET SECURITY
-========================
-*/
 
+/* 🔥 LOGO IMAGES */
+app.use(
+  "/api/logo/uploads",
+  express.static(path.join(process.cwd(), "uploads/logo"))
+);
+
+/* ================= WEBSOCKET ================= */
 wss.on("connection", (ws, req) => {
-
   const ip = req.socket.remoteAddress;
   console.log("WebSocket Verbindung:", ip);
 
   ws.on("message", (message) => {
-
     if (message.length > 5000) {
       ws.close();
     }
-
   });
-
 });
 
-/*
-========================
-ROUTES
-========================
-*/
-
+/* ================= ROUTES ================= */
 app.use("/api/login", require("./routes/login.router"));
 app.use("/api/home", require("./routes/home.router"));
 app.use("/api/logo", require("./routes/logo.router"));
@@ -135,44 +100,28 @@ app.use("/api/admin", require("./routes/admin.router"));
 app.use("/api/galerie", require("./routes/galerie.router"));
 app.use("/api/oeffnungszeiten", require("./routes/oeffnungszeiten.router"));
 app.use("/api/menu", require("./routes/menu.router"));
-app.use("/api/betriebsferien", require("./routes/betriebsferien.router.js"));
+app.use("/api/betriebsferien", require("./routes/betriebsferien.router"));
 
-/*
-========================
-404 HANDLER
-========================
-*/
-
-app.use((req,res)=>{
+/* ================= 404 ================= */
+app.use((req, res) => {
   res.status(404).json({
-    error:"Route nicht gefunden"
+    error: "Route nicht gefunden",
   });
 });
 
-/*
-========================
-ERROR HANDLER
-========================
-*/
-
+/* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
-
   console.error(err);
 
   res.status(err.status || 500).json({
-    error: process.env.NODE_ENV === "production"
-      ? "Server Fehler"
-      : err.message
+    error:
+      process.env.NODE_ENV === "production"
+        ? "Server Fehler"
+        : err.message,
   });
-
 });
 
-/*
-========================
-SERVER START
-========================
-*/
-
+/* ================= START SERVER ================= */
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {

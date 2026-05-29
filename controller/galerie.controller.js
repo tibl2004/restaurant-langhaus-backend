@@ -4,9 +4,10 @@ const fs = require("fs");
 const multer = require("multer");
 const auth = require("../middleware/auth");
 
-/* ================= MULTER ================= */
+/* ================= UPLOAD PATH ================= */
 const uploadDir = path.join(__dirname, "../uploads/galerie");
 
+/* ================= MULTER ================= */
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     if (!fs.existsSync(uploadDir)) {
@@ -29,7 +30,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB Schutz
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
       return cb(new Error("Nur Bilder erlaubt!"), false);
@@ -42,12 +43,12 @@ const upload = multer({
 const buildImageUrl = (req, filePath) => {
   if (!filePath) return null;
 
-  // immer sauber normalisieren
+  // sorgt dafür, dass immer /api/galerie drin ist
   const cleanPath = filePath.startsWith("/")
     ? filePath
     : "/" + filePath;
 
-  return `${req.protocol}://${req.get("host")}${cleanPath}`;
+  return `${req.protocol}://${req.get("host")}/api/galerie${cleanPath}`;
 };
 
 /* ================= CONTROLLER ================= */
@@ -60,13 +61,13 @@ const galerieController = {
         "SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC"
       );
 
-      const data = rows.map((r) => ({
+      const result = rows.map((r) => ({
         id: r.id,
         bild: buildImageUrl(req, r.bild),
         erstellt_am: r.erstellt_am,
       }));
 
-      res.json(data);
+      res.json(result);
 
     } catch (err) {
       console.error("GET GALERIE ERROR:", err);
@@ -89,7 +90,6 @@ const galerieController = {
           `/uploads/galerie/${file.filename}`,
         ]);
 
-        // Bulk Insert (viel schneller als loop)
         await pool.query(
           "INSERT INTO galerie (bild) VALUES ?",
           [values]
@@ -127,14 +127,16 @@ const galerieController = {
         const dbPath = rows[0].bild;
         const fullPath = path.join(__dirname, "..", dbPath);
 
-        // Datei löschen (wenn vorhanden)
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
         }
 
-        await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
+        await pool.query(
+          "DELETE FROM galerie WHERE id = ?",
+          [id]
+        );
 
-        res.json({ message: "Bild erfolgreich gelöscht" });
+        res.json({ message: "Bild gelöscht" });
 
       } catch (err) {
         console.error("DELETE ERROR:", err);
