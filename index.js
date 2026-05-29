@@ -14,85 +14,148 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-app.set("trust proxy", 1); // 🔥 Render / Proxy fix
+/*
+========================================
+TRUST PROXY (RENDER / VERCEL)
+========================================
+*/
 
-/* ================= SECURITY ================= */
+app.set("trust proxy", 1);
+
+/*
+========================================
+SECURITY
+========================================
+*/
+
 app.use(helmet());
-app.use(morgan("combined"));
 app.use(compression());
+app.use(morgan("combined"));
 
-/* ================= RATE LIMIT ================= */
+/*
+========================================
+GLOBAL RATE LIMIT
+========================================
+*/
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(globalLimiter);
+
+/*
+========================================
+LOGIN LIMIT
+========================================
+*/
+
+const loginLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  message: "Zu viele Loginversuche. Bitte später erneut versuchen.",
+});
+
+app.use("/api/login", loginLimiter);
+
+/*
+========================================
+CORS
+========================================
+*/
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "https://langhaus.vercel.app",
+];
+
 app.use(
-  rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
+  cors({
+    origin: function (origin, callback) {
+
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS blockiert"));
+      }
+
+    },
+
+    methods: ["GET", "POST", "PUT", "DELETE"],
+
+    credentials: true,
   })
 );
 
-/* ================= LOGIN LIMIT ================= */
+/*
+========================================
+BODY PARSER
+========================================
+*/
+
+app.use(express.json({
+  limit: "10mb",
+}));
+
+app.use(express.urlencoded({
+  extended: true,
+  limit: "10mb",
+}));
+
+/*
+========================================
+STATIC FILES
+========================================
+
+🔥 EIN EINZIGER CLEANER STATIC WEG
+
+/uploads/galerie/...
+/uploads/logo/...
+/uploads/menu/...
+
+========================================
+*/
+
 app.use(
-  "/api/login",
-  rateLimit({
-    windowMs: 10 * 60 * 1000,
-    max: 5,
-    message: "Zu viele Loginversuche. Bitte später erneut versuchen.",
-  })
+  "/uploads",
+  express.static(path.join(__dirname, "uploads"))
 );
 
-/* ================= CORS ================= */
-const corsOptions = {
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      process.env.FRONTEND_URL,
-      "https://langhaus.vercel.app",
-    ];
+/*
+========================================
+WEBSOCKET
+========================================
+*/
 
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("CORS blockiert"));
-    }
-  },
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
-
-/* ================= BODY ================= */
-app.use(express.urlencoded({ limit: "10mb", extended: true }));
-app.use(express.json({ limit: "10mb" }));
-
-/* ================= STATIC FILES ================= */
-
-/* 🔥 GALERIE IMAGES */
-app.use(
-  "/api/galerie/uploads",
-  express.static(path.join(process.cwd(), "uploads/galerie"))
-);
-
-/* 🔥 LOGO IMAGES */
-app.use(
-  "/api/logo/uploads",
-  express.static(path.join(process.cwd(), "uploads/logo"))
-);
-
-/* ================= WEBSOCKET ================= */
 wss.on("connection", (ws, req) => {
+
   const ip = req.socket.remoteAddress;
-  console.log("WebSocket Verbindung:", ip);
+
+  console.log("WebSocket verbunden:", ip);
 
   ws.on("message", (message) => {
+
     if (message.length > 5000) {
       ws.close();
     }
+
   });
+
+  ws.on("close", () => {
+    console.log("WebSocket getrennt");
+  });
+
 });
 
-/* ================= ROUTES ================= */
+/*
+========================================
+API ROUTES
+========================================
+*/
+
 app.use("/api/login", require("./routes/login.router"));
 app.use("/api/home", require("./routes/home.router"));
 app.use("/api/logo", require("./routes/logo.router"));
@@ -102,16 +165,44 @@ app.use("/api/oeffnungszeiten", require("./routes/oeffnungszeiten.router"));
 app.use("/api/menu", require("./routes/menu.router"));
 app.use("/api/betriebsferien", require("./routes/betriebsferien.router"));
 
-/* ================= 404 ================= */
+/*
+========================================
+ROOT ROUTE
+========================================
+*/
+
+app.get("/", (req, res) => {
+
+  res.json({
+    status: "OK",
+    message: "Restaurant Langhaus Backend läuft",
+  });
+
+});
+
+/*
+========================================
+404 HANDLER
+========================================
+*/
+
 app.use((req, res) => {
+
   res.status(404).json({
     error: "Route nicht gefunden",
   });
+
 });
 
-/* ================= ERROR HANDLER ================= */
+/*
+========================================
+GLOBAL ERROR HANDLER
+========================================
+*/
+
 app.use((err, req, res, next) => {
-  console.error(err);
+
+  console.error("SERVER ERROR:", err);
 
   res.status(err.status || 500).json({
     error:
@@ -119,11 +210,19 @@ app.use((err, req, res, next) => {
         ? "Server Fehler"
         : err.message,
   });
+
 });
 
-/* ================= START SERVER ================= */
+/*
+========================================
+SERVER START
+========================================
+*/
+
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
-  console.log(`Server läuft auf Port ${PORT}`);
+
+  console.log(`🚀 Server läuft auf Port ${PORT}`);
+
 });

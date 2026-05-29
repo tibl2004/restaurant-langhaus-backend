@@ -1,20 +1,40 @@
+// ======================================
+// routes/galerie.router.js
+// ======================================
+
 const express = require("express");
 const router = express.Router();
+
 const galerieController = require("../controller/galerie.controller");
 
-/* ================= GET GALERIE ================= */
+/*
+====================================
+GET
+====================================
+*/
+
 router.get(
   "/",
   galerieController.getGalerie
 );
 
-/* ================= UPLOAD ================= */
+/*
+====================================
+UPLOAD
+====================================
+*/
+
 router.post(
   "/upload",
   galerieController.uploadGalerieBilder
 );
 
-/* ================= DELETE ================= */
+/*
+====================================
+DELETE
+====================================
+*/
+
 router.delete(
   "/:id",
   galerieController.deleteGalerieBild

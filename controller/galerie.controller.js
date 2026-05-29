@@ -1,22 +1,40 @@
+// ======================================
+// controller/galerie.controller.js
+// ======================================
+
 const pool = require("../database/index");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 const auth = require("../middleware/auth");
 
-/* ================= UPLOAD PATH ================= */
+/*
+====================================
+UPLOAD ORDNER
+====================================
+*/
+
 const uploadDir = path.join(__dirname, "../uploads/galerie");
 
-/* ================= MULTER ================= */
+/*
+====================================
+MULTER
+====================================
+*/
+
 const storage = multer.diskStorage({
+
   destination: (req, file, cb) => {
+
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
+
     cb(null, uploadDir);
   },
 
   filename: (req, file, cb) => {
+
     const uniqueName =
       "galerie_" +
       Date.now() +
@@ -30,64 +48,100 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+
   fileFilter: (req, file, cb) => {
+
     if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Nur Bilder erlaubt!"), false);
+      return cb(new Error("Nur Bilder erlaubt"), false);
     }
+
     cb(null, true);
   },
 });
 
-/* ================= HELPER ================= */
+/*
+====================================
+HELPER
+====================================
+*/
+
 const buildImageUrl = (req, filePath) => {
-  if (!filePath) return null;
 
-  // sorgt dafür, dass immer /api/galerie drin ist
-  const cleanPath = filePath.startsWith("/")
-    ? filePath
-    : "/" + filePath;
-
-  return `${req.protocol}://${req.get("host")}/api/galerie${cleanPath}`;
+  return `${req.protocol}://${req.get("host")}/uploads${filePath}`;
 };
 
-/* ================= CONTROLLER ================= */
+/*
+====================================
+CONTROLLER
+====================================
+*/
+
 const galerieController = {
 
-  /* ========== GET ========== */
-  async getGalerie(req, res) {
-    try {
-      const [rows] = await pool.query(
-        "SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC"
-      );
+  /*
+  ====================================
+  GET GALERIE
+  ====================================
+  */
 
-      const result = rows.map((r) => ({
-        id: r.id,
-        bild: buildImageUrl(req, r.bild),
-        erstellt_am: r.erstellt_am,
+  async getGalerie(req, res) {
+
+    try {
+
+      const [rows] = await pool.query(`
+        SELECT id, bild, erstellt_am
+        FROM galerie
+        ORDER BY id DESC
+      `);
+
+      const data = rows.map((item) => ({
+        id: item.id,
+
+        bild: buildImageUrl(req, item.bild),
+
+        erstellt_am: item.erstellt_am,
       }));
 
-      res.json(result);
+      res.json(data);
 
     } catch (err) {
-      console.error("GET GALERIE ERROR:", err);
-      res.status(500).json({ error: "Fehler beim Laden der Galerie" });
+
+      console.error(err);
+
+      res.status(500).json({
+        error: "Fehler beim Laden",
+      });
     }
   },
 
-  /* ========== UPLOAD ========== */
+  /*
+  ====================================
+  UPLOAD
+  ====================================
+  */
+
   uploadGalerieBilder: [
+
     auth,
+
     upload.array("bilder", 20),
 
     async (req, res) => {
+
       try {
+
         if (!req.files || req.files.length === 0) {
-          return res.status(400).json({ error: "Keine Bilder erhalten" });
+          return res.status(400).json({
+            error: "Keine Bilder erhalten",
+          });
         }
 
         const values = req.files.map((file) => [
-          `/uploads/galerie/${file.filename}`,
+          `/galerie/${file.filename}`,
         ]);
 
         await pool.query(
@@ -101,18 +155,30 @@ const galerieController = {
         });
 
       } catch (err) {
-        console.error("UPLOAD ERROR:", err);
-        res.status(500).json({ error: "Upload fehlgeschlagen" });
+
+        console.error(err);
+
+        res.status(500).json({
+          error: "Upload fehlgeschlagen",
+        });
       }
     },
   ],
 
-  /* ========== DELETE ========== */
+  /*
+  ====================================
+  DELETE
+  ====================================
+  */
+
   deleteGalerieBild: [
+
     auth,
 
     async (req, res) => {
+
       try {
+
         const { id } = req.params;
 
         const [rows] = await pool.query(
@@ -121,11 +187,18 @@ const galerieController = {
         );
 
         if (rows.length === 0) {
-          return res.status(404).json({ error: "Bild nicht gefunden" });
+          return res.status(404).json({
+            error: "Nicht gefunden",
+          });
         }
 
-        const dbPath = rows[0].bild;
-        const fullPath = path.join(__dirname, "..", dbPath);
+        const bildPfad = rows[0].bild;
+
+        const fullPath = path.join(
+          __dirname,
+          "../uploads",
+          bildPfad
+        );
 
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
@@ -136,11 +209,17 @@ const galerieController = {
           [id]
         );
 
-        res.json({ message: "Bild gelöscht" });
+        res.json({
+          message: "Bild gelöscht",
+        });
 
       } catch (err) {
-        console.error("DELETE ERROR:", err);
-        res.status(500).json({ error: "Delete fehlgeschlagen" });
+
+        console.error(err);
+
+        res.status(500).json({
+          error: "Delete fehlgeschlagen",
+        });
       }
     },
   ],
