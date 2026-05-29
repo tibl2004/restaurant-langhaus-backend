@@ -1,7 +1,3 @@
-// ======================================
-// controller/galerie.controller.js
-// ======================================
-
 const pool = require("../database/index");
 const path = require("path");
 const fs = require("fs");
@@ -23,9 +19,7 @@ MULTER
 */
 
 const storage = multer.diskStorage({
-
   destination: (req, file, cb) => {
-
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -34,7 +28,6 @@ const storage = multer.diskStorage({
   },
 
   filename: (req, file, cb) => {
-
     const uniqueName =
       "galerie_" +
       Date.now() +
@@ -48,17 +41,14 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-
   limits: {
     fileSize: 10 * 1024 * 1024,
   },
 
   fileFilter: (req, file, cb) => {
-
     if (!file.mimetype.startsWith("image/")) {
       return cb(new Error("Nur Bilder erlaubt"), false);
     }
-
     cb(null, true);
   },
 });
@@ -70,7 +60,6 @@ HELPER
 */
 
 const buildImageUrl = (req, filePath) => {
-
   return `${req.protocol}://${req.get("host")}/uploads${filePath}`;
 };
 
@@ -82,16 +71,8 @@ CONTROLLER
 
 const galerieController = {
 
-  /*
-  ====================================
-  GET GALERIE
-  ====================================
-  */
-
   async getGalerie(req, res) {
-
     try {
-
       const [rows] = await pool.query(`
         SELECT id, bild, erstellt_am
         FROM galerie
@@ -100,44 +81,25 @@ const galerieController = {
 
       const data = rows.map((item) => ({
         id: item.id,
-
         bild: buildImageUrl(req, item.bild),
-
         erstellt_am: item.erstellt_am,
       }));
 
       res.json(data);
-
     } catch (err) {
-
       console.error(err);
-
-      res.status(500).json({
-        error: "Fehler beim Laden",
-      });
+      res.status(500).json({ error: "Fehler beim Laden" });
     }
   },
 
-  /*
-  ====================================
-  UPLOAD
-  ====================================
-  */
-
   uploadGalerieBilder: [
-
     auth,
-
     upload.array("bilder", 20),
 
     async (req, res) => {
-
       try {
-
         if (!req.files || req.files.length === 0) {
-          return res.status(400).json({
-            error: "Keine Bilder erhalten",
-          });
+          return res.status(400).json({ error: "Keine Bilder erhalten" });
         }
 
         const values = req.files.map((file) => [
@@ -155,30 +117,17 @@ const galerieController = {
         });
 
       } catch (err) {
-
         console.error(err);
-
-        res.status(500).json({
-          error: "Upload fehlgeschlagen",
-        });
+        res.status(500).json({ error: "Upload fehlgeschlagen" });
       }
     },
   ],
 
-  /*
-  ====================================
-  DELETE
-  ====================================
-  */
-
   deleteGalerieBild: [
-
     auth,
 
     async (req, res) => {
-
       try {
-
         const { id } = req.params;
 
         const [rows] = await pool.query(
@@ -187,12 +136,10 @@ const galerieController = {
         );
 
         if (rows.length === 0) {
-          return res.status(404).json({
-            error: "Nicht gefunden",
-          });
+          return res.status(404).json({ error: "Nicht gefunden" });
         }
 
-        const bildPfad = rows[0].bild;
+        const bildPfad = rows[0].bild; // /galerie/xyz.jpg
 
         const fullPath = path.join(
           __dirname,
@@ -209,17 +156,11 @@ const galerieController = {
           [id]
         );
 
-        res.json({
-          message: "Bild gelöscht",
-        });
+        res.json({ message: "Bild gelöscht" });
 
       } catch (err) {
-
         console.error(err);
-
-        res.status(500).json({
-          error: "Delete fehlgeschlagen",
-        });
+        res.status(500).json({ error: "Delete fehlgeschlagen" });
       }
     },
   ],
