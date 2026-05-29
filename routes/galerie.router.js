@@ -1,12 +1,44 @@
+// routes/galerie.router.js
+
 const express = require("express");
 const router = express.Router();
 
 const galerieController = require("../controller/galerie.controller");
 
-router.get("/", galerieController.getGalerie);
+/*
+====================================
+GALERIE LADEN
+GET /api/galerie
+====================================
+*/
 
-router.post("/upload", galerieController.uploadGalerieBilder);
+router.get(
+  "/",
+  galerieController.getGalerie
+);
 
-router.delete("/:id", galerieController.deleteGalerieBild);
+/*
+====================================
+BILDER UPLOAD
+POST /api/galerie/upload
+====================================
+*/
+
+router.post(
+  "/upload",
+  galerieController.uploadGalerieBilder
+);
+
+/*
+====================================
+BILD LÖSCHEN
+DELETE /api/galerie/:id
+====================================
+*/
+
+router.delete(
+  "/:id",
+  galerieController.deleteGalerieBild
+);
 
 module.exports = router;

@@ -14,12 +14,13 @@ const uploadDir = path.join(__dirname, "../uploads/galerie");
 
 /*
 ====================================
-MULTER
+MULTER STORAGE
 ====================================
 */
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -28,6 +29,7 @@ const storage = multer.diskStorage({
   },
 
   filename: (req, file, cb) => {
+
     const uniqueName =
       "galerie_" +
       Date.now() +
@@ -39,16 +41,25 @@ const storage = multer.diskStorage({
   },
 });
 
+/*
+====================================
+MULTER
+====================================
+*/
+
 const upload = multer({
   storage,
+
   limits: {
     fileSize: 10 * 1024 * 1024,
   },
 
   fileFilter: (req, file, cb) => {
+
     if (!file.mimetype.startsWith("image/")) {
       return cb(new Error("Nur Bilder erlaubt"), false);
     }
+
     cb(null, true);
   },
 });
@@ -60,7 +71,17 @@ HELPER
 */
 
 const buildImageUrl = (req, filePath) => {
-  return `${req.protocol}://${req.get("host")}/uploads${filePath}`;
+
+  if (!filePath) {
+    return null;
+  }
+
+  // Alte kaputte DB-Einträge absichern
+  const cleanPath = filePath.startsWith("/uploads")
+    ? filePath
+    : `/uploads${filePath}`;
+
+  return `${req.protocol}://${req.get("host")}${cleanPath}`;
 };
 
 /*
@@ -71,8 +92,16 @@ CONTROLLER
 
 const galerieController = {
 
+  /*
+  ====================================
+  GALERIE LADEN
+  ====================================
+  */
+
   async getGalerie(req, res) {
+
     try {
+
       const [rows] = await pool.query(`
         SELECT id, bild, erstellt_am
         FROM galerie
@@ -86,21 +115,45 @@ const galerieController = {
       }));
 
       res.json(data);
+
     } catch (err) {
+
       console.error(err);
-      res.status(500).json({ error: "Fehler beim Laden" });
+
+      res.status(500).json({
+        error: "Fehler beim Laden der Galerie",
+      });
+
     }
   },
 
+  /*
+  ====================================
+  BILDER UPLOADEN
+  ====================================
+  */
+
   uploadGalerieBilder: [
+
     auth,
+
     upload.array("bilder", 20),
 
     async (req, res) => {
+
       try {
+
         if (!req.files || req.files.length === 0) {
-          return res.status(400).json({ error: "Keine Bilder erhalten" });
+          return res.status(400).json({
+            error: "Keine Bilder erhalten",
+          });
         }
+
+        /*
+        WICHTIG:
+        NUR /galerie/... speichern
+        NICHT /uploads/galerie/...
+        */
 
         const values = req.files.map((file) => [
           `/galerie/${file.filename}`,
@@ -117,17 +170,31 @@ const galerieController = {
         });
 
       } catch (err) {
+
         console.error(err);
-        res.status(500).json({ error: "Upload fehlgeschlagen" });
+
+        res.status(500).json({
+          error: "Upload fehlgeschlagen",
+        });
+
       }
     },
   ],
 
+  /*
+  ====================================
+  BILD LÖSCHEN
+  ====================================
+  */
+
   deleteGalerieBild: [
+
     auth,
 
     async (req, res) => {
+
       try {
+
         const { id } = req.params;
 
         const [rows] = await pool.query(
@@ -136,31 +203,60 @@ const galerieController = {
         );
 
         if (rows.length === 0) {
-          return res.status(404).json({ error: "Nicht gefunden" });
+          return res.status(404).json({
+            error: "Bild nicht gefunden",
+          });
         }
 
-        const bildPfad = rows[0].bild; // /galerie/xyz.jpg
+        const bildPfad = rows[0].bild;
+
+        /*
+        Beispiel:
+
+        DB:
+        /galerie/test.jpg
+
+        FULL PATH:
+        uploads/galerie/test.jpg
+        */
+
+        const cleanPath = bildPfad.replace(/^\/uploads/, "");
 
         const fullPath = path.join(
           __dirname,
           "../uploads",
-          bildPfad
+          cleanPath
         );
+
+        /*
+        Datei löschen falls vorhanden
+        */
 
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
         }
+
+        /*
+        DB löschen
+        */
 
         await pool.query(
           "DELETE FROM galerie WHERE id = ?",
           [id]
         );
 
-        res.json({ message: "Bild gelöscht" });
+        res.json({
+          message: "Bild gelöscht",
+        });
 
       } catch (err) {
+
         console.error(err);
-        res.status(500).json({ error: "Delete fehlgeschlagen" });
+
+        res.status(500).json({
+          error: "Löschen fehlgeschlagen",
+        });
+
       }
     },
   ],

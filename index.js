@@ -1,3 +1,5 @@
+// index.js
+
 require("dotenv").config();
 
 const express = require("express");
@@ -12,11 +14,21 @@ const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 
 /*
 ========================================
-TRUST PROXY (RENDER / VERCEL)
+WEBSOCKET
+========================================
+*/
+
+const wss = new WebSocket.Server({
+  server,
+});
+
+/*
+========================================
+TRUST PROXY
+(RENDER / VERCEL)
 ========================================
 */
 
@@ -34,7 +46,7 @@ app.use(morgan("combined"));
 
 /*
 ========================================
-GLOBAL RATE LIMIT
+RATE LIMIT
 ========================================
 */
 
@@ -56,7 +68,9 @@ LOGIN LIMIT
 const loginLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 5,
-  message: "Zu viele Loginversuche. Bitte später erneut versuchen.",
+
+  message:
+    "Zu viele Loginversuche. Bitte später erneut versuchen.",
 });
 
 app.use("/api/login", loginLimiter);
@@ -76,15 +90,27 @@ app.use(
   cors({
     origin: function (origin, callback) {
 
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("CORS blockiert"));
+      // Postman / mobile apps erlauben
+      if (!origin) {
+        return callback(null, true);
       }
 
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error("CORS blockiert")
+      );
     },
 
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "DELETE",
+      "OPTIONS",
+    ],
 
     credentials: true,
   })
@@ -110,22 +136,25 @@ app.use(express.urlencoded({
 STATIC FILES
 ========================================
 
-🔥 EIN EINZIGER CLEANER STATIC WEG
+URL:
+https://backend.onrender.com/uploads/galerie/test.jpg
 
-/uploads/galerie/...
-/uploads/logo/...
-/uploads/menu/...
+ORDNER:
+backend/uploads/galerie/test.jpg
 
 ========================================
 */
 
 app.use(
   "/uploads",
-  express.static(path.join(__dirname, "uploads"))
+  express.static(
+    path.join(__dirname, "uploads")
+  )
 );
+
 /*
 ========================================
-WEBSOCKET
+WEBSOCKET EVENTS
 ========================================
 */
 
@@ -137,6 +166,7 @@ wss.on("connection", (ws, req) => {
 
   ws.on("message", (message) => {
 
+    // Schutz gegen Spam
     if (message.length > 5000) {
       ws.close();
     }
@@ -155,14 +185,45 @@ API ROUTES
 ========================================
 */
 
-app.use("/api/login", require("./routes/login.router"));
-app.use("/api/home", require("./routes/home.router"));
-app.use("/api/logo", require("./routes/logo.router"));
-app.use("/api/admin", require("./routes/admin.router"));
-app.use("/api/galerie", require("./routes/galerie.router"));
-app.use("/api/oeffnungszeiten", require("./routes/oeffnungszeiten.router"));
-app.use("/api/menu", require("./routes/menu.router"));
-app.use("/api/betriebsferien", require("./routes/betriebsferien.router"));
+app.use(
+  "/api/login",
+  require("./routes/login.router")
+);
+
+app.use(
+  "/api/home",
+  require("./routes/home.router")
+);
+
+app.use(
+  "/api/logo",
+  require("./routes/logo.router")
+);
+
+app.use(
+  "/api/admin",
+  require("./routes/admin.router")
+);
+
+app.use(
+  "/api/galerie",
+  require("./routes/galerie.router")
+);
+
+app.use(
+  "/api/oeffnungszeiten",
+  require("./routes/oeffnungszeiten.router")
+);
+
+app.use(
+  "/api/menu",
+  require("./routes/menu.router")
+);
+
+app.use(
+  "/api/betriebsferien",
+  require("./routes/betriebsferien.router")
+);
 
 /*
 ========================================
@@ -203,7 +264,9 @@ app.use((err, req, res, next) => {
 
   console.error("SERVER ERROR:", err);
 
-  res.status(err.status || 500).json({
+  res.status(
+    err.status || 500
+  ).json({
     error:
       process.env.NODE_ENV === "production"
         ? "Server Fehler"
@@ -222,6 +285,8 @@ const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
 
-  console.log(`🚀 Server läuft auf Port ${PORT}`);
+  console.log(
+    `🚀 Server läuft auf Port ${PORT}`
+  );
 
 });
