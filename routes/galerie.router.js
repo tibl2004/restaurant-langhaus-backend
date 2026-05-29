@@ -1,8 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const galerieController = require("../controller/galerie.controller");
-const auth = require("../middleware/auth");
-
 
 // 🔹 Galerie abrufen
 router.get(
@@ -10,16 +8,16 @@ router.get(
   galerieController.getGalerie
 );
 
+// 🔹 Bilder hochladen
+// (auth + multer sind bereits im Controller integriert)
 router.post(
   "/upload",
-  auth,
   galerieController.uploadGalerieBilder
 );
 
-
+// 🔹 Bild löschen
 router.delete(
   "/:id",
-  auth,
   galerieController.deleteGalerieBild
 );
 

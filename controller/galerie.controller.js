@@ -5,15 +5,14 @@ const multer = require("multer");
 const auth = require("../middleware/auth");
 
 /* ================= MULTER ================= */
+const uploadDir = path.join(__dirname, "../uploads/galerie");
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = path.join(__dirname, "../uploads/galerie");
-
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
     }
-
-    cb(null, dir);
+    cb(null, uploadDir);
   },
 
   filename: (req, file, cb) => {
@@ -21,8 +20,8 @@ const storage = multer.diskStorage({
       "galerie_" +
       Date.now() +
       "_" +
-      Math.random().toString(36).substring(2) +
-      path.extname(file.originalname);
+      Math.random().toString(36).substring(2, 10) +
+      path.extname(file.originalname).toLowerCase();
 
     cb(null, uniqueName);
   },
@@ -30,6 +29,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB Schutz
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
       return cb(new Error("Nur Bilder erlaubt!"), false);
@@ -37,6 +37,18 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+/* ================= HELPER ================= */
+const buildImageUrl = (req, filePath) => {
+  if (!filePath) return null;
+
+  // immer sauber normalisieren
+  const cleanPath = filePath.startsWith("/")
+    ? filePath
+    : "/" + filePath;
+
+  return `${req.protocol}://${req.get("host")}${cleanPath}`;
+};
 
 /* ================= CONTROLLER ================= */
 const galerieController = {
@@ -48,20 +60,17 @@ const galerieController = {
         "SELECT id, bild, erstellt_am FROM galerie ORDER BY id DESC"
       );
 
-      res.json(
-        rows.map((r) => ({
-          id: r.id,
+      const data = rows.map((r) => ({
+        id: r.id,
+        bild: buildImageUrl(req, r.bild),
+        erstellt_am: r.erstellt_am,
+      }));
 
-          // FIXED URL
-          bild: `${req.protocol}://${req.get("host")}${r.bild}`,
-
-          erstellt_am: r.erstellt_am,
-        }))
-      );
+      res.json(data);
 
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Fehler beim Laden" });
+      console.error("GET GALERIE ERROR:", err);
+      res.status(500).json({ error: "Fehler beim Laden der Galerie" });
     }
   },
 
@@ -76,14 +85,15 @@ const galerieController = {
           return res.status(400).json({ error: "Keine Bilder erhalten" });
         }
 
-        for (const file of req.files) {
-          const dbPath = `/uploads/galerie/${file.filename}`;
+        const values = req.files.map((file) => [
+          `/uploads/galerie/${file.filename}`,
+        ]);
 
-          await pool.query(
-            "INSERT INTO galerie (bild) VALUES (?)",
-            [dbPath]
-          );
-        }
+        // Bulk Insert (viel schneller als loop)
+        await pool.query(
+          "INSERT INTO galerie (bild) VALUES ?",
+          [values]
+        );
 
         res.status(201).json({
           message: "Upload erfolgreich",
@@ -94,7 +104,7 @@ const galerieController = {
         console.error("UPLOAD ERROR:", err);
         res.status(500).json({ error: "Upload fehlgeschlagen" });
       }
-    }
+    },
   ],
 
   /* ========== DELETE ========== */
@@ -110,33 +120,28 @@ const galerieController = {
           [id]
         );
 
-        if (!rows.length) {
-          return res.status(404).json({ error: "Nicht gefunden" });
+        if (rows.length === 0) {
+          return res.status(404).json({ error: "Bild nicht gefunden" });
         }
 
-        let filePath = rows[0].bild;
+        const dbPath = rows[0].bild;
+        const fullPath = path.join(__dirname, "..", dbPath);
 
-        // remove leading slash
-        if (filePath.startsWith("/")) {
-          filePath = filePath.slice(1);
-        }
-
-        const fullPath = path.join(__dirname, "..", filePath);
-
+        // Datei löschen (wenn vorhanden)
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
         }
 
         await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
 
-        res.json({ message: "Gelöscht" });
+        res.json({ message: "Bild erfolgreich gelöscht" });
 
       } catch (err) {
-        console.error(err);
+        console.error("DELETE ERROR:", err);
         res.status(500).json({ error: "Delete fehlgeschlagen" });
       }
-    }
-  ]
+    },
+  ],
 };
 
 module.exports = galerieController;
