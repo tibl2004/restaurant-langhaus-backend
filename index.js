@@ -205,6 +205,11 @@ app.use(
 );
 
 app.use(
+  "/api/drinks",
+  require("./routes/drinks.router")
+);
+
+app.use(
   "/api/betriebsferien",
   require("./routes/betriebsferien.router")
 );
