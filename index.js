@@ -81,44 +81,25 @@ CORS
 ========================================
 */
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://langhaus.vercel.app"
+];
+
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "https://restaurant-langhaus-backend.onrender.com"
-  ],
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log("❌ CORS BLOCKED:", origin);
+    return callback(null, false);
+  },
   credentials: true
 }));
-
-app.use(
-  cors({
-    origin: function (origin, callback) {
-
-      // Postman / mobile apps erlauben
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(
-        new Error("CORS blockiert")
-      );
-    },
-
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "DELETE",
-      "OPTIONS",
-    ],
-
-    credentials: true,
-  })
-);
-
 /*
 ========================================
 BODY PARSER
