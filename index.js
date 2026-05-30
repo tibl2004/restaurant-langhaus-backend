@@ -81,10 +81,13 @@ CORS
 ========================================
 */
 
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  "https://langhaus.vercel.app",
-];
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    "https://restaurant-langhaus-backend.onrender.com"
+  ],
+  credentials: true
+}));
 
 app.use(
   cors({
