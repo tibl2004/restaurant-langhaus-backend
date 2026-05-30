@@ -346,6 +346,27 @@ const drinksController = {
     }
   },
 
+  getAllCards: async (req, res) => {
+    try {
+  
+      const [cards] = await pool.query(`
+        SELECT *
+        FROM drinks_menu
+        ORDER BY id ASC
+      `);
+  
+      res.json(cards);
+  
+    } catch (err) {
+  
+      console.error(err);
+  
+      res.status(500).json({
+        error: "Fehler beim Laden der Getränkekarten"
+      });
+    }
+  },
+
   /* =====================================================
      🍺 UPDATE DRINK
   ===================================================== */
