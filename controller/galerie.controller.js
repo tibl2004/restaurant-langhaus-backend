@@ -1,4 +1,3 @@
-
 const pool = require("../database/index");
 const multer = require("multer");
 const path = require("path");
@@ -8,16 +7,35 @@ const fs = require("fs");
 // KONFIGURATION
 // ==========================================
 
-// Render Persistent Disk muss unter /var/data gemountet sein.
-// In Render als Environment Variable setzen:
-// UPLOAD_DIR=/var/data/uploads
+// Render Persistent Disk: Mount Path = /var/data
+// Environment Variable: UPLOAD_DIR=/var/data/uploads
 
-const uploadDir =
-  process.env.UPLOAD_DIR || "/var/data/uploads";
+let uploadDir = process.env.UPLOAD_DIR || "/var/data/uploads";
 
-// Verzeichnis erstellen, sofern es nicht existiert.
-// Funktioniert nur, wenn der Speicherort beschreibbar ist.
-fs.mkdirSync(uploadDir, { recursive: true });
+try {
+  fs.mkdirSync(uploadDir, { recursive: true });
+} catch (error) {
+  console.error(
+    `Upload-Verzeichnis ${uploadDir} nicht beschreibbar:`,
+    error.message
+  );
+
+  // Fallback nur zum Testen: Dateien gehen bei Redeploy verloren!
+  uploadDir = path.join(__dirname, "..", "uploads");
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.warn(`Fallback-Verzeichnis wird verwendet: ${uploadDir}`);
+}
+
+// Wird auch von app.js für express.static benötigt
+exports.uploadDir = uploadDir;
+
+const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+const ALLOWED_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif"
+];
 
 // ==========================================
 // MULTER KONFIGURATION
@@ -31,18 +49,6 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const extension = path.extname(file.originalname).toLowerCase();
 
-    const allowedExtensions = [
-      ".jpg",
-      ".jpeg",
-      ".png",
-      ".webp",
-      ".gif"
-    ];
-
-    if (!allowedExtensions.includes(extension)) {
-      return cb(new Error("Dieses Bildformat ist nicht erlaubt."));
-    }
-
     const uniqueName =
       `galerie-${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
 
@@ -54,19 +60,17 @@ const upload = multer({
   storage,
 
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: 10 * 1024 * 1024, // 10 MB pro Bild
     files: 20
   },
 
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif"
-    ];
+    const extension = path.extname(file.originalname).toLowerCase();
 
-    if (!allowedMimeTypes.includes(file.mimetype)) {
+    if (
+      !ALLOWED_EXTENSIONS.includes(extension) ||
+      !ALLOWED_MIME_TYPES.includes(file.mimetype)
+    ) {
       return cb(
         new Error("Erlaubt sind JPG-, PNG-, WEBP- und GIF-Bilder.")
       );
@@ -75,6 +79,30 @@ const upload = multer({
     cb(null, true);
   }
 });
+
+// Middleware mit sauberer Fehlerbehandlung (statt Server-Crash / HTML-Fehler)
+exports.uploadMiddleware = (req, res, next) => {
+  upload.array("bilder", 20)(req, res, (error) => {
+    if (!error) return next();
+
+    console.error("Upload-Fehler:", error.message);
+
+    if (error instanceof multer.MulterError) {
+      const messages = {
+        LIMIT_FILE_SIZE: "Ein Bild ist größer als 10 MB.",
+        LIMIT_FILE_COUNT: "Maximal 20 Bilder auf einmal erlaubt.",
+        LIMIT_UNEXPECTED_FILE:
+          'Falsches Formularfeld. Das Feld muss "bilder" heißen.'
+      };
+
+      return res.status(400).json({
+        message: messages[error.code] || "Fehler beim Hochladen."
+      });
+    }
+
+    return res.status(400).json({ message: error.message });
+  });
+};
 
 // ==========================================
 // BILD-URL ERSTELLEN
@@ -97,23 +125,17 @@ function getImageUrl(filename) {
 exports.getGalerie = async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT
-         id,
-         bild_url,
-         dateiname,
-         created_at
+      `SELECT id, bild_url, dateiname, created_at
        FROM galerie
        ORDER BY id DESC`
     );
 
     const galerie = rows.map((bild) => ({
       id: bild.id,
-
-      // Vorhandene URLs bleiben kompatibel.
+      // Alte URLs ohne Dateiname bleiben kompatibel
       bild_url: bild.dateiname
         ? getImageUrl(bild.dateiname)
         : bild.bild_url,
-
       dateiname: bild.dateiname,
       created_at: bild.created_at
     }));
@@ -131,7 +153,7 @@ exports.getGalerie = async (req, res) => {
 // ==========================================
 // BILDER HOCHLADEN
 // POST /api/galerie
-// Multipart-FormData: bilder
+// Multipart-FormData, Feldname: bilder
 // ==========================================
 
 exports.uploadGalerie = async (req, res) => {
@@ -180,13 +202,13 @@ exports.uploadGalerie = async (req, res) => {
       connection.release();
     }
   } catch (error) {
-    // Bei Datenbankfehlern keine ungenutzten Uploads liegen lassen.
+    // Bei Fehlern keine verwaisten Dateien liegen lassen
     for (const file of uploadedFiles) {
       try {
         fs.unlinkSync(file.path);
       } catch (unlinkError) {
         console.error(
-          "Temporäres Bild konnte nicht entfernt werden:",
+          "Bild konnte nicht entfernt werden:",
           unlinkError.message
         );
       }
@@ -210,9 +232,7 @@ exports.deleteGalerie = async (req, res) => {
     const { id } = req.params;
 
     if (!/^\d+$/.test(id)) {
-      return res.status(400).json({
-        message: "Ungültige Bild-ID."
-      });
+      return res.status(400).json({ message: "Ungültige Bild-ID." });
     }
 
     const [rows] = await pool.query(
@@ -224,33 +244,26 @@ exports.deleteGalerie = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({
-        message: "Bild wurde nicht gefunden."
-      });
+      return res.status(404).json({ message: "Bild wurde nicht gefunden." });
     }
 
     const bild = rows[0];
 
-    await pool.query(
-      "DELETE FROM galerie WHERE id = ?",
-      [id]
-    );
+    await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
 
-    if (bild.dateiname) {
+    // Nur Dateien direkt aus dem Upload-Verzeichnis löschen
+    if (bild.dateiname && path.basename(bild.dateiname) === bild.dateiname) {
       const filePath = path.join(uploadDir, bild.dateiname);
 
-      // Nur Dateien direkt aus dem Galerie-Verzeichnis löschen.
-      if (path.basename(bild.dateiname) === bild.dateiname) {
-        try {
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
-        } catch (fileError) {
-          console.error(
-            "Bilddatei konnte nicht gelöscht werden:",
-            fileError.message
-          );
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
         }
+      } catch (fileError) {
+        console.error(
+          "Bilddatei konnte nicht gelöscht werden:",
+          fileError.message
+        );
       }
     }
 
@@ -265,9 +278,3 @@ exports.deleteGalerie = async (req, res) => {
     });
   }
 };
-
-// ==========================================
-// MULTER-MIDDLEWARE EXPORTIEREN
-// ==========================================
-
-exports.uploadMiddleware = upload.array("bilder", 20);
