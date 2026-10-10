@@ -185,6 +185,12 @@ app.use(
 );
 
 app.use(
+  "/api/chat",
+  require("./routes/chatbot.router")
+);
+
+
+app.use(
   "/api/admin",
   require("./routes/admin.router")
 );

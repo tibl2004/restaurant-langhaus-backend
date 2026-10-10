@@ -21,6 +21,11 @@ router.post(
   drinksController.createCategory
 );
 
+
+router.get(
+  "/cards",
+  drinksController.getAllCards
+);
 /* =====================================================
    📂 KATEGORIEN LADEN
    GET /api/drinks/categories
