@@ -1,137 +1,95 @@
 
 const pool = require("../database/index");
 const multer = require("multer");
-const { v2: cloudinary } = require("cloudinary");
-const streamifier = require("streamifier");
+const path = require("path");
+const fs = require("fs");
+const crypto = require("crypto");
 const auth = require("../middleware/auth");
 
-/*
-==================================================
-CLOUDINARY
-==================================================
-*/
+const uploadDir = process.env.UPLOAD_DIR || "/var/data/uploads";
+const apiBaseUrl = process.env.API_BASE_URL;
 
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
+fs.mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadDir);
+    },
+
+    filename: (req, file, cb) => {
+        const extension = (
+            path.extname(file.originalname).toLowerCase() || ".jpg"
+        );
+
+        cb(null, `${crypto.randomUUID()}${extension}`);
+    }
 });
 
-/*
-==================================================
-MULTER – BILDER IM ARBEITSSPEICHER VERARBEITEN
-==================================================
-Keine lokale Speicherung notwendig.
-Funktioniert auch auf Hostern mit temporärem Dateisystem.
-==================================================
-*/
-
 const upload = multer({
-    storage: multer.memoryStorage(),
-
+    storage,
     limits: {
         fileSize: 10 * 1024 * 1024,
         files: 20
     },
-
     fileFilter: (req, file, cb) => {
-        if (!file.mimetype || !file.mimetype.startsWith("image/")) {
-            return cb(new Error("Nur Bilder sind erlaubt."));
+        const allowedTypes = [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+            "image/avif"
+        ];
+
+        if (!allowedTypes.includes(file.mimetype)) {
+            return cb(new Error("Nur JPG, PNG, WEBP, GIF und AVIF sind erlaubt."));
         }
 
         cb(null, true);
     }
 });
 
-/*
-==================================================
-CLOUDINARY-UPLOAD
-==================================================
-*/
+function getBaseUrl(req) {
+    const configuredUrl = apiBaseUrl || (
+        `${req.protocol}://${req.get("host")}`
+    );
 
-function uploadToCloudinary(file) {
-    return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-            {
-                folder: "galerie",
-                resource_type: "image",
-                unique_filename: true,
-                overwrite: false,
-                transformation: [
-                    { quality: "auto" },
-                    { fetch_format: "auto" }
-                ]
-            },
-            (error, result) => {
-                if (error) {
-                    return reject(error);
-                }
-
-                if (!result || !result.secure_url || !result.public_id) {
-                    return reject(
-                        new Error("Cloudinary hat kein gültiges Bildergebnis geliefert.")
-                    );
-                }
-
-                resolve(result);
-            }
-        );
-
-        streamifier
-            .createReadStream(file.buffer)
-            .on("error", reject)
-            .pipe(stream);
-    });
+    return configuredUrl.replace(/\/+$/, "");
 }
 
-/*
-==================================================
-CLOUDINARY-LÖSCHUNG
-==================================================
-*/
+function getImageUrl(req, filename) {
+    return `${getBaseUrl(req)}/uploads/${encodeURIComponent(filename)}`;
+}
 
-async function deleteFromCloudinary(publicId) {
-    if (!publicId) return;
+function deleteLocalFile(filename) {
+    if (!filename) return;
 
-    const result = await cloudinary.uploader.destroy(publicId, {
-        resource_type: "image"
-    });
+    const safeName = path.basename(filename);
+    const filePath = path.join(uploadDir, safeName);
 
-    if (result.result !== "ok" && result.result !== "not found") {
-        throw new Error("Bild konnte nicht aus Cloudinary gelöscht werden.");
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
     }
 }
 
-/*
-==================================================
-CONTROLLER
-==================================================
-*/
-
 const galerieController = {
-
-    /*
-    ----------------------------------------------
-    ALLE BILDER LADEN
-    ----------------------------------------------
-    Öffentlicher GET-Endpunkt
-    ----------------------------------------------
-    */
-
+    // GET /api/galerie
+    // Öffentliche Galerie laden
     async getGalerie(req, res) {
         try {
             const [rows] = await pool.query(`
-                SELECT
-                    id,
-                    bild_url,
-                    cloudinary_id,
-                    erstellt_am
+                SELECT id, bild_url, dateiname, erstellt_am
                 FROM galerie
                 ORDER BY id DESC
             `);
 
-            return res.status(200).json(rows);
-
+            return res.status(200).json(rows.map((row) => ({
+                id: row.id,
+                bild_url: row.dateiname
+                    ? getImageUrl(req, row.dateiname)
+                    : row.bild_url,
+                dateiname: row.dateiname,
+                erstellt_am: row.erstellt_am
+            })));
         } catch (error) {
             console.error("Galerie laden:", error);
 
@@ -141,83 +99,13 @@ const galerieController = {
         }
     },
 
-    /*
-    ----------------------------------------------
-    BILDER HOCHLADEN
-    ----------------------------------------------
-    Authentifizierung erforderlich
-    FormData-Feld: bilder
-    Maximal 20 Bilder pro Anfrage
-    ----------------------------------------------
-    */
-
+    // POST /api/galerie
+    // FormData-Feld: bilder
     uploadGalerieBilder: [
         auth,
-        upload.array("bilder", 20),
-
-        async (req, res) => {
-            const uploadedImages = [];
-
-            try {
-                if (!req.files || req.files.length === 0) {
-                    return res.status(400).json({
-                        error: "Bitte mindestens ein Bild auswählen."
-                    });
-                }
-
-                /*
-                 * Zuerst Bilder hochladen.
-                 */
-                for (const file of req.files) {
-                    const result = await uploadToCloudinary(file);
-
-                    uploadedImages.push({
-                        url: result.secure_url,
-                        publicId: result.public_id
-                    });
-                }
-
-                /*
-                 * Anschliessend in MySQL/MariaDB speichern.
-                 */
-                const values = uploadedImages.map((image) => [
-                    image.url,
-                    image.publicId
-                ]);
-
-                await pool.query(
-                    `
-                    INSERT INTO galerie (
-                        bild_url,
-                        cloudinary_id
-                    )
-                    VALUES ?
-                    `,
-                    [values]
-                );
-
-                return res.status(201).json({
-                    message: "Bilder erfolgreich hochgeladen.",
-                    anzahl: uploadedImages.length,
-                    bilder: uploadedImages.map((image) => ({
-                        url: image.url,
-                        publicId: image.publicId
-                    }))
-                });
-
-            } catch (error) {
-                console.error("Galerie-Upload:", error);
-
-                /*
-                 * Falls die Datenbank-Speicherung scheitert,
-                 * versuchen, die bereits hochgeladenen Bilder
-                 * wieder aus Cloudinary zu entfernen.
-                 */
-                await Promise.allSettled(
-                    uploadedImages.map((image) =>
-                        deleteFromCloudinary(image.publicId)
-                    )
-                );
+        (req, res, next) => {
+            upload.array("bilder", 20)(req, res, (error) => {
+                if (!error) return next();
 
                 if (error.code === "LIMIT_FILE_SIZE") {
                     return res.status(413).json({
@@ -227,45 +115,94 @@ const galerieController = {
 
                 if (error.code === "LIMIT_FILE_COUNT") {
                     return res.status(400).json({
-                        error: "Es sind maximal 20 Bilder pro Upload erlaubt."
+                        error: "Maximal 20 Bilder pro Upload."
                     });
                 }
 
-                return res.status(500).json({
-                    error: "Bilder konnten nicht hochgeladen werden."
+                return res.status(400).json({
+                    error: error.message || "Upload fehlgeschlagen."
                 });
+            });
+        },
+
+        async (req, res) => {
+            const files = req.files || [];
+
+            if (files.length === 0) {
+                return res.status(400).json({
+                    error: "Bitte mindestens ein Bild auswählen."
+                });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                await connection.beginTransaction();
+
+                const inserted = [];
+
+                for (const file of files) {
+                    const [result] = await connection.query(
+                        `INSERT INTO galerie (bild_url, dateiname)
+                         VALUES (?, ?)`,
+                        ["", file.filename]
+                    );
+
+                    inserted.push({
+                        id: result.insertId,
+                        bild_url: getImageUrl(req, file.filename),
+                        dateiname: file.filename
+                    });
+                }
+
+                await connection.commit();
+
+                return res.status(201).json({
+                    message: "Bilder erfolgreich hochgeladen.",
+                    anzahl: inserted.length,
+                    bilder: inserted
+                });
+            } catch (error) {
+                await connection.rollback();
+
+                for (const file of files) {
+                    try {
+                        deleteLocalFile(file.filename);
+                    } catch (deleteError) {
+                        console.error("Datei aufräumen:", deleteError);
+                    }
+                }
+
+                console.error("Galerie-Upload:", error);
+
+                return res.status(500).json({
+                    error: "Bilder konnten nicht gespeichert werden."
+                });
+            } finally {
+                connection.release();
             }
         }
     ],
 
-    /*
-    ----------------------------------------------
-    BILD LÖSCHEN
-    ----------------------------------------------
-    Authentifizierung erforderlich
-    ----------------------------------------------
-    */
-
+    // DELETE /api/galerie/:id
     deleteGalerieBild: [
         auth,
 
         async (req, res) => {
+            const id = String(req.params.id);
+
+            if (!/^\d+$/.test(id)) {
+                return res.status(400).json({
+                    error: "Ungültige Bild-ID."
+                });
+            }
+
             try {
-                const id = req.params.id;
-
-                if (!/^\d+$/.test(String(id))) {
-                    return res.status(400).json({
-                        error: "Ungültige Bild-ID."
-                    });
-                }
-
                 const [rows] = await pool.query(
-                    `
-                    SELECT cloudinary_id
-                    FROM galerie
-                    WHERE id = ?
-                    LIMIT 1
-                    `,
+                    `SELECT id, dateiname
+                     FROM galerie
+                     WHERE id = ?
+                     LIMIT 1`,
                     [id]
                 );
 
@@ -275,34 +212,28 @@ const galerieController = {
                     });
                 }
 
-                const publicId = rows[0].cloudinary_id;
+                const filename = rows[0].dateiname;
 
-                /*
-                 * Erst Cloudinary löschen.
-                 * Bei einem Fehler bleibt der Datenbankeintrag erhalten.
-                 */
-                try {
-                    await deleteFromCloudinary(publicId);
-                } catch (cloudinaryError) {
-                    console.error("Cloudinary-Löschung:", cloudinaryError);
-
-                    return res.status(502).json({
-                        error: "Das Bild konnte beim Bildanbieter nicht gelöscht werden."
-                    });
-                }
-
+                // Erst den Datenbankeintrag löschen.
                 await pool.query(
-                    `
-                    DELETE FROM galerie
-                    WHERE id = ?
-                    `,
+                    "DELETE FROM galerie WHERE id = ?",
                     [id]
                 );
+
+                // Danach die Datei entfernen.
+                try {
+                    deleteLocalFile(filename);
+                } catch (error) {
+                    console.error("Bilddatei löschen:", error);
+
+                    return res.status(500).json({
+                        error: "Datenbankeintrag gelöscht, aber die Bilddatei konnte nicht entfernt werden."
+                    });
+                }
 
                 return res.status(200).json({
                     message: "Bild erfolgreich gelöscht."
                 });
-
             } catch (error) {
                 console.error("Galerie-Bild löschen:", error);
 
