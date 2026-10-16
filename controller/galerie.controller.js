@@ -1,120 +1,124 @@
 const pool = require("../database/index");
 const multer = require("multer");
 const path = require("path");
-const fs = require("fs");
 
 // ==========================================
 // KONFIGURATION
 // ==========================================
 
-// Render Persistent Disk: Mount Path = /var/data
-// Environment Variable: UPLOAD_DIR=/var/data/uploads
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILES = 20;
 
-let uploadDir = process.env.UPLOAD_DIR || "/var/data/uploads";
+const ALLOWED_EXTENSIONS = [
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".gif"
+];
 
-try {
-  fs.mkdirSync(uploadDir, { recursive: true });
-} catch (error) {
-  console.error(
-    `Upload-Verzeichnis ${uploadDir} nicht beschreibbar:`,
-    error.message
-  );
-
-  // Fallback nur zum Testen: Dateien gehen bei Redeploy verloren!
-  uploadDir = path.join(__dirname, "..", "uploads");
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.warn(`Fallback-Verzeichnis wird verwendet: ${uploadDir}`);
-}
-
-// Wird auch von app.js für express.static benötigt
-exports.uploadDir = uploadDir;
-
-const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
 const ALLOWED_MIME_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif"
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif"
 ];
 
 // ==========================================
-// MULTER KONFIGURATION
+// MULTER – SPEICHERUNG IM ARBEITSSPEICHER
+// Keine lokalen Dateien / kein Render-Disk
 // ==========================================
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-
-  filename: (req, file, cb) => {
-    const extension = path.extname(file.originalname).toLowerCase();
-
-    const uniqueName =
-      `galerie-${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
-
-    cb(null, uniqueName);
-  }
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({
-  storage,
+    storage,
 
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10 MB pro Bild
-    files: 20
-  },
+    limits: {
+        fileSize: MAX_FILE_SIZE,
+        files: MAX_FILES
+    },
 
-  fileFilter: (req, file, cb) => {
-    const extension = path.extname(file.originalname).toLowerCase();
+    fileFilter: (req, file, cb) => {
+        const extension = path
+            .extname(file.originalname)
+            .toLowerCase();
 
-    if (
-      !ALLOWED_EXTENSIONS.includes(extension) ||
-      !ALLOWED_MIME_TYPES.includes(file.mimetype)
-    ) {
-      return cb(
-        new Error("Erlaubt sind JPG-, PNG-, WEBP- und GIF-Bilder.")
-      );
+        if (
+            !ALLOWED_EXTENSIONS.includes(extension) ||
+            !ALLOWED_MIME_TYPES.includes(file.mimetype)
+        ) {
+            return cb(
+                new Error(
+                    "Erlaubt sind JPG-, PNG-, WEBP- und GIF-Bilder."
+                )
+            );
+        }
+
+        cb(null, true);
     }
-
-    cb(null, true);
-  }
 });
 
-// Middleware mit sauberer Fehlerbehandlung (statt Server-Crash / HTML-Fehler)
+// ==========================================
+// UPLOAD-MIDDLEWARE
+// POST /api/galerie
+// Formularfeld: bilder
+// ==========================================
+
 exports.uploadMiddleware = (req, res, next) => {
-  upload.array("bilder", 20)(req, res, (error) => {
-    if (!error) return next();
+    upload.array("bilder", MAX_FILES)(
+        req,
+        res,
+        (error) => {
+            if (!error) {
+                return next();
+            }
 
-    console.error("Upload-Fehler:", error.message);
+            console.error(
+                "Galerie-Upload-Fehler:",
+                error.message
+            );
 
-    if (error instanceof multer.MulterError) {
-      const messages = {
-        LIMIT_FILE_SIZE: "Ein Bild ist größer als 10 MB.",
-        LIMIT_FILE_COUNT: "Maximal 20 Bilder auf einmal erlaubt.",
-        LIMIT_UNEXPECTED_FILE:
-          'Falsches Formularfeld. Das Feld muss "bilder" heißen.'
-      };
+            if (error instanceof multer.MulterError) {
+                const messages = {
+                    LIMIT_FILE_SIZE:
+                        "Ein Bild darf maximal 10 MB gross sein.",
 
-      return res.status(400).json({
-        message: messages[error.code] || "Fehler beim Hochladen."
-      });
-    }
+                    LIMIT_FILE_COUNT:
+                        "Es dürfen maximal 20 Bilder gleichzeitig hochgeladen werden.",
 
-    return res.status(400).json({ message: error.message });
-  });
+                    LIMIT_UNEXPECTED_FILE:
+                        'Das Upload-Feld muss "bilder" heissen.'
+                };
+
+                return res.status(400).json({
+                    message:
+                        messages[error.code] ||
+                        "Fehler beim Hochladen der Bilder."
+                });
+            }
+
+            return res.status(400).json({
+                message: error.message ||
+                    "Ungültiger Bild-Upload."
+            });
+        }
+    );
 };
 
 // ==========================================
-// BILD-URL ERSTELLEN
+// MIME-TYPE SICHERHEIT
 // ==========================================
 
-function getImageUrl(filename) {
-  const baseUrl = (
-    process.env.API_BASE_URL ||
-    "https://DEIN-BACKEND.onrender.com"
-  ).replace(/\/+$/, "");
+function isAllowedImage(file) {
+    const extension = path
+        .extname(file.originalname)
+        .toLowerCase();
 
-  return `${baseUrl}/uploads/${encodeURIComponent(filename)}`;
+    return (
+        ALLOWED_EXTENSIONS.includes(extension) &&
+        ALLOWED_MIME_TYPES.includes(file.mimetype)
+    );
 }
 
 // ==========================================
@@ -123,103 +127,234 @@ function getImageUrl(filename) {
 // ==========================================
 
 exports.getGalerie = async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      `SELECT id, bild_url, dateiname, created_at
-       FROM galerie
-       ORDER BY id DESC`
-    );
+    try {
+        const [rows] = await pool.query(
+            `SELECT
+                id,
+                bild_url,
+                dateiname,
+                mime_type,
+                created_at
+             FROM galerie
+             ORDER BY id DESC`
+        );
 
-    const galerie = rows.map((bild) => ({
-      id: bild.id,
-      // Alte URLs ohne Dateiname bleiben kompatibel
-      bild_url: bild.dateiname
-        ? getImageUrl(bild.dateiname)
-        : bild.bild_url,
-      dateiname: bild.dateiname,
-      created_at: bild.created_at
-    }));
+        const galerie = rows.map((bild) => ({
+            id: bild.id,
 
-    return res.status(200).json(galerie);
-  } catch (error) {
-    console.error("Fehler beim Abrufen der Galerie:", error);
+            // Bilder aus der Datenbank werden über
+            // einen separaten Endpunkt ausgeliefert.
+            bild_url: bild.mime_type
+                ? `/api/galerie/${bild.id}/bild`
+                : bild.bild_url,
 
-    return res.status(500).json({
-      message: "Die Galerie konnte nicht geladen werden."
-    });
-  }
+            dateiname: bild.dateiname,
+            mime_type: bild.mime_type,
+            created_at: bild.created_at
+        }));
+
+        return res.status(200).json(galerie);
+
+    } catch (error) {
+        console.error(
+            "Fehler beim Abrufen der Galerie:",
+            error
+        );
+
+        return res.status(500).json({
+            message:
+                "Die Galerie konnte nicht geladen werden."
+        });
+    }
+};
+
+// ==========================================
+// EINZELNES BILD AUSLIEFERN
+// GET /api/galerie/:id/bild
+// ==========================================
+
+exports.getGalerieBild = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!/^\d+$/.test(id)) {
+            return res.status(400).json({
+                message: "Ungültige Bild-ID."
+            });
+        }
+
+        const [rows] = await pool.query(
+            `SELECT bild, mime_type
+             FROM galerie
+             WHERE id = ?
+             LIMIT 1`,
+            [id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({
+                message: "Bild wurde nicht gefunden."
+            });
+        }
+
+        const image = rows[0];
+
+        if (!image.bild || !image.mime_type) {
+            return res.status(404).json({
+                message:
+                    "Für dieses Bild sind keine gespeicherten Bilddaten vorhanden."
+            });
+        }
+
+        if (!ALLOWED_MIME_TYPES.includes(image.mime_type)) {
+            return res.status(415).json({
+                message: "Nicht unterstützter Bildtyp."
+            });
+        }
+
+        res.setHeader(
+            "Content-Type",
+            image.mime_type
+        );
+
+        res.setHeader(
+            "X-Content-Type-Options",
+            "nosniff"
+        );
+
+        res.setHeader(
+            "Cache-Control",
+            "public, max-age=86400"
+        );
+
+        return res.status(200).send(image.bild);
+
+    } catch (error) {
+        console.error(
+            "Fehler beim Ausliefern des Bildes:",
+            error
+        );
+
+        return res.status(500).json({
+            message:
+                "Das Bild konnte nicht geladen werden."
+        });
+    }
 };
 
 // ==========================================
 // BILDER HOCHLADEN
 // POST /api/galerie
-// Multipart-FormData, Feldname: bilder
+// Multipart-FormData: bilder
 // ==========================================
 
 exports.uploadGalerie = async (req, res) => {
-  const uploadedFiles = req.files || [];
+    const files = req.files || [];
 
-  try {
-    if (uploadedFiles.length === 0) {
-      return res.status(400).json({
-        message: "Bitte mindestens ein Bild auswählen."
-      });
+    if (files.length === 0) {
+        return res.status(400).json({
+            message:
+                "Bitte mindestens ein Bild auswählen."
+        });
     }
 
-    const connection = await pool.getConnection();
+    // Zusätzliche Prüfung vor dem Speichern.
+    for (const file of files) {
+        if (!isAllowedImage(file)) {
+            return res.status(400).json({
+                message:
+                    "Ein Bild besitzt einen ungültigen Dateityp."
+            });
+        }
+
+        if (!file.buffer || file.buffer.length === 0) {
+            return res.status(400).json({
+                message:
+                    "Eine Bilddatei ist leer oder ungültig."
+            });
+        }
+    }
+
+    let connection;
 
     try {
-      await connection.beginTransaction();
+        connection = await pool.getConnection();
 
-      const insertedImages = [];
+        await connection.beginTransaction();
 
-      for (const file of uploadedFiles) {
-        const bildUrl = getImageUrl(file.filename);
+        const insertedImages = [];
 
-        const [result] = await connection.query(
-          `INSERT INTO galerie (bild_url, dateiname)
-           VALUES (?, ?)`,
-          [bildUrl, file.filename]
-        );
+        for (const file of files) {
+            const extension = path
+                .extname(file.originalname)
+                .toLowerCase();
 
-        insertedImages.push({
-          id: result.insertId,
-          bild_url: bildUrl,
-          dateiname: file.filename
+            const dateiname =
+                `galerie-${Date.now()}-${Math.round(
+                    Math.random() * 1e9
+                )}${extension}`;
+
+            const [result] = await connection.query(
+                `INSERT INTO galerie (
+                    bild_url,
+                    dateiname,
+                    bild,
+                    mime_type
+                )
+                VALUES (?, ?, ?, ?)`,
+                [
+                    null,
+                    dateiname,
+                    file.buffer,
+                    file.mimetype
+                ]
+            );
+
+            insertedImages.push({
+                id: result.insertId,
+                bild_url:
+                    `/api/galerie/${result.insertId}/bild`,
+                dateiname,
+                mime_type: file.mimetype
+            });
+        }
+
+        await connection.commit();
+
+        return res.status(201).json({
+            message:
+                "Bilder wurden erfolgreich in der Datenbank gespeichert.",
+
+            bilder: insertedImages
         });
-      }
 
-      await connection.commit();
+    } catch (error) {
+        if (connection) {
+            try {
+                await connection.rollback();
+            } catch (rollbackError) {
+                console.error(
+                    "Rollback fehlgeschlagen:",
+                    rollbackError.message
+                );
+            }
+        }
 
-      return res.status(201).json({
-        message: "Bilder wurden erfolgreich hochgeladen.",
-        bilder: insertedImages
-      });
-    } catch (dbError) {
-      await connection.rollback();
-      throw dbError;
-    } finally {
-      connection.release();
-    }
-  } catch (error) {
-    // Bei Fehlern keine verwaisten Dateien liegen lassen
-    for (const file of uploadedFiles) {
-      try {
-        fs.unlinkSync(file.path);
-      } catch (unlinkError) {
         console.error(
-          "Bild konnte nicht entfernt werden:",
-          unlinkError.message
+            "Fehler beim Speichern der Galerie:",
+            error
         );
-      }
+
+        return res.status(500).json({
+            message:
+                "Die Bilder konnten nicht gespeichert werden."
+        });
+
+    } finally {
+        if (connection) {
+            connection.release();
+        }
     }
-
-    console.error("Fehler beim Hochladen:", error);
-
-    return res.status(500).json({
-      message: "Die Bilder konnten nicht gespeichert werden."
-    });
-  }
 };
 
 // ==========================================
@@ -228,53 +363,42 @@ exports.uploadGalerie = async (req, res) => {
 // ==========================================
 
 exports.deleteGalerie = async (req, res) => {
-  try {
-    const { id } = req.params;
+    try {
+        const { id } = req.params;
 
-    if (!/^\d+$/.test(id)) {
-      return res.status(400).json({ message: "Ungültige Bild-ID." });
-    }
-
-    const [rows] = await pool.query(
-      `SELECT id, dateiname
-       FROM galerie
-       WHERE id = ?
-       LIMIT 1`,
-      [id]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({ message: "Bild wurde nicht gefunden." });
-    }
-
-    const bild = rows[0];
-
-    await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
-
-    // Nur Dateien direkt aus dem Upload-Verzeichnis löschen
-    if (bild.dateiname && path.basename(bild.dateiname) === bild.dateiname) {
-      const filePath = path.join(uploadDir, bild.dateiname);
-
-      try {
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
+        if (!/^\d+$/.test(id)) {
+            return res.status(400).json({
+                message: "Ungültige Bild-ID."
+            });
         }
-      } catch (fileError) {
-        console.error(
-          "Bilddatei konnte nicht gelöscht werden:",
-          fileError.message
+
+        const [result] = await pool.query(
+            `DELETE FROM galerie
+             WHERE id = ?`,
+            [id]
         );
-      }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                message:
+                    "Bild wurde nicht gefunden."
+            });
+        }
+
+        return res.status(200).json({
+            message:
+                "Bild wurde erfolgreich gelöscht."
+        });
+
+    } catch (error) {
+        console.error(
+            "Fehler beim Löschen des Bildes:",
+            error
+        );
+
+        return res.status(500).json({
+            message:
+                "Das Bild konnte nicht gelöscht werden."
+        });
     }
-
-    return res.status(200).json({
-      message: "Bild wurde erfolgreich gelöscht."
-    });
-  } catch (error) {
-    console.error("Fehler beim Löschen:", error);
-
-    return res.status(500).json({
-      message: "Das Bild konnte nicht gelöscht werden."
-    });
-  }
 };
