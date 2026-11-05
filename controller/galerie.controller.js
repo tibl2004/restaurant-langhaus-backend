@@ -1,121 +1,43 @@
+
 const pool = require("../database/index");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const ImageKit = require("@imagekit/nodejs");
 
 // ==========================================
-// KONFIGURATION
+// IMAGEKIT KONFIGURATION
 // ==========================================
 
-// Render Persistent Disk: Mount Path = /var/data
-// Environment Variable: UPLOAD_DIR=/var/data/uploads
-
-let uploadDir = process.env.UPLOAD_DIR || "/var/data/uploads";
-
-try {
-  fs.mkdirSync(uploadDir, { recursive: true });
-} catch (error) {
-  console.error(
-    `Upload-Verzeichnis ${uploadDir} nicht beschreibbar:`,
-    error.message
-  );
-
-  // Fallback nur zum Testen: Dateien gehen bei Redeploy verloren!
-  uploadDir = path.join(__dirname, "..", "uploads");
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.warn(`Fallback-Verzeichnis wird verwendet: ${uploadDir}`);
+if (!process.env.IMAGEKIT_PRIVATE_KEY || !process.env.IMAGEKIT_PUBLIC_KEY) {
+  throw new Error("ImageKit API-Schlüssel fehlen in der .env-Datei.");
 }
 
-// Wird auch von app.js für express.static benötigt
-exports.uploadDir = uploadDir;
-
-const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
-const ALLOWED_MIME_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif"
-];
-
-// ==========================================
-// MULTER KONFIGURATION
-// ==========================================
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-
-  filename: (req, file, cb) => {
-    const extension = path.extname(file.originalname).toLowerCase();
-
-    const uniqueName =
-      `galerie-${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
-
-    cb(null, uniqueName);
-  }
+const imagekit = new ImageKit({
+  privateKey: process.env.IMAGEKIT_PRIVATE_KEY
 });
 
-const upload = multer({
-  storage,
+const PUBLIC_KEY = process.env.IMAGEKIT_PUBLIC_KEY;
 
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10 MB pro Bild
-    files: 20
-  },
+// ==========================================
+// AUTHENTIFIZIERUNG FÜR REACT
+// GET /api/galerie/upload-auth
+// ==========================================
 
-  fileFilter: (req, file, cb) => {
-    const extension = path.extname(file.originalname).toLowerCase();
+exports.getUploadAuth = async (req, res) => {
+  try {
+    const authParams = imagekit.helper.getAuthenticationParameters();
 
-    if (
-      !ALLOWED_EXTENSIONS.includes(extension) ||
-      !ALLOWED_MIME_TYPES.includes(file.mimetype)
-    ) {
-      return cb(
-        new Error("Erlaubt sind JPG-, PNG-, WEBP- und GIF-Bilder.")
-      );
-    }
+    return res.status(200).json({
+      ...authParams,
+      publicKey: PUBLIC_KEY
+    });
 
-    cb(null, true);
+  } catch (error) {
+    console.error("ImageKit Auth-Fehler:", error);
+
+    return res.status(500).json({
+      message: "Upload-Authentifizierung fehlgeschlagen."
+    });
   }
-});
-
-// Middleware mit sauberer Fehlerbehandlung (statt Server-Crash / HTML-Fehler)
-exports.uploadMiddleware = (req, res, next) => {
-  upload.array("bilder", 20)(req, res, (error) => {
-    if (!error) return next();
-
-    console.error("Upload-Fehler:", error.message);
-
-    if (error instanceof multer.MulterError) {
-      const messages = {
-        LIMIT_FILE_SIZE: "Ein Bild ist größer als 10 MB.",
-        LIMIT_FILE_COUNT: "Maximal 20 Bilder auf einmal erlaubt.",
-        LIMIT_UNEXPECTED_FILE:
-          'Falsches Formularfeld. Das Feld muss "bilder" heißen.'
-      };
-
-      return res.status(400).json({
-        message: messages[error.code] || "Fehler beim Hochladen."
-      });
-    }
-
-    return res.status(400).json({ message: error.message });
-  });
 };
-
-// ==========================================
-// BILD-URL ERSTELLEN
-// ==========================================
-
-function getImageUrl(filename) {
-  const baseUrl = (
-    process.env.API_BASE_URL ||
-    "https://DEIN-BACKEND.onrender.com"
-  ).replace(/\/+$/, "");
-
-  return `${baseUrl}/uploads/${encodeURIComponent(filename)}`;
-}
 
 // ==========================================
 // GALERIE ABRUFEN
@@ -125,22 +47,21 @@ function getImageUrl(filename) {
 exports.getGalerie = async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, bild_url, dateiname, created_at
+      `SELECT id, bild_url, dateiname, imagekit_file_id, created_at
        FROM galerie
        ORDER BY id DESC`
     );
 
-    const galerie = rows.map((bild) => ({
-      id: bild.id,
-      // Alte URLs ohne Dateiname bleiben kompatibel
-      bild_url: bild.dateiname
-        ? getImageUrl(bild.dateiname)
-        : bild.bild_url,
-      dateiname: bild.dateiname,
-      created_at: bild.created_at
-    }));
+    return res.status(200).json(
+      rows.map((bild) => ({
+        id: bild.id,
+        bild_url: bild.bild_url,
+        dateiname: bild.dateiname,
+        imagekit_file_id: bild.imagekit_file_id,
+        created_at: bild.created_at
+      }))
+    );
 
-    return res.status(200).json(galerie);
   } catch (error) {
     console.error("Fehler beim Abrufen der Galerie:", error);
 
@@ -151,19 +72,64 @@ exports.getGalerie = async (req, res) => {
 };
 
 // ==========================================
-// BILDER HOCHLADEN
+// BILDER IN MYSQL SPEICHERN
 // POST /api/galerie
-// Multipart-FormData, Feldname: bilder
+//
+// Erwartet JSON:
+// {
+//   "bilder": [
+//     {
+//       "fileId": "...",
+//       "url": "...",
+//       "name": "..."
+//     }
+//   ]
+// }
 // ==========================================
 
 exports.uploadGalerie = async (req, res) => {
-  const uploadedFiles = req.files || [];
+  const bilder = req.body.bilder;
 
   try {
-    if (uploadedFiles.length === 0) {
+    if (!Array.isArray(bilder) || bilder.length === 0) {
       return res.status(400).json({
-        message: "Bitte mindestens ein Bild auswählen."
+        message: "Bitte mindestens ein Bild hochladen."
       });
+    }
+
+    if (bilder.length > 20) {
+      return res.status(400).json({
+        message: "Maximal 20 Bilder auf einmal erlaubt."
+      });
+    }
+
+    for (const bild of bilder) {
+      if (
+        !bild.fileId ||
+        typeof bild.fileId !== "string" ||
+        !bild.url ||
+        typeof bild.url !== "string" ||
+        !bild.name ||
+        typeof bild.name !== "string"
+      ) {
+        return res.status(400).json({
+          message: "Ungültige Bildinformationen."
+        });
+      }
+
+      if (
+        !bild.url.startsWith(process.env.IMAGEKIT_URL_ENDPOINT + "/")
+      ) {
+        return res.status(400).json({
+          message: "Ungültige ImageKit-Bildadresse."
+        });
+      }
+
+      if (!/\.(jpg|jpeg|png|webp|gif)$/i.test(bild.name)) {
+        return res.status(400).json({
+          message: "Ungültiger Bilddateiname."
+        });
+      }
     }
 
     const connection = await pool.getConnection();
@@ -173,48 +139,43 @@ exports.uploadGalerie = async (req, res) => {
 
       const insertedImages = [];
 
-      for (const file of uploadedFiles) {
-        const bildUrl = getImageUrl(file.filename);
-
+      for (const bild of bilder) {
         const [result] = await connection.query(
-          `INSERT INTO galerie (bild_url, dateiname)
-           VALUES (?, ?)`,
-          [bildUrl, file.filename]
+          `INSERT INTO galerie
+           (bild_url, dateiname, imagekit_file_id)
+           VALUES (?, ?, ?)`,
+          [
+            bild.url,
+            bild.name,
+            bild.fileId
+          ]
         );
 
         insertedImages.push({
           id: result.insertId,
-          bild_url: bildUrl,
-          dateiname: file.filename
+          bild_url: bild.url,
+          dateiname: bild.name,
+          imagekit_file_id: bild.fileId
         });
       }
 
       await connection.commit();
 
       return res.status(201).json({
-        message: "Bilder wurden erfolgreich hochgeladen.",
+        message: "Bilder wurden erfolgreich gespeichert.",
         bilder: insertedImages
       });
+
     } catch (dbError) {
       await connection.rollback();
       throw dbError;
+
     } finally {
       connection.release();
     }
-  } catch (error) {
-    // Bei Fehlern keine verwaisten Dateien liegen lassen
-    for (const file of uploadedFiles) {
-      try {
-        fs.unlinkSync(file.path);
-      } catch (unlinkError) {
-        console.error(
-          "Bild konnte nicht entfernt werden:",
-          unlinkError.message
-        );
-      }
-    }
 
-    console.error("Fehler beim Hochladen:", error);
+  } catch (error) {
+    console.error("Fehler beim Speichern der Galerie:", error);
 
     return res.status(500).json({
       message: "Die Bilder konnten nicht gespeichert werden."
@@ -232,11 +193,13 @@ exports.deleteGalerie = async (req, res) => {
     const { id } = req.params;
 
     if (!/^\d+$/.test(id)) {
-      return res.status(400).json({ message: "Ungültige Bild-ID." });
+      return res.status(400).json({
+        message: "Ungültige Bild-ID."
+      });
     }
 
     const [rows] = await pool.query(
-      `SELECT id, dateiname
+      `SELECT id, imagekit_file_id
        FROM galerie
        WHERE id = ?
        LIMIT 1`,
@@ -244,32 +207,28 @@ exports.deleteGalerie = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ message: "Bild wurde nicht gefunden." });
+      return res.status(404).json({
+        message: "Bild wurde nicht gefunden."
+      });
     }
 
     const bild = rows[0];
 
-    await pool.query("DELETE FROM galerie WHERE id = ?", [id]);
-
-    // Nur Dateien direkt aus dem Upload-Verzeichnis löschen
-    if (bild.dateiname && path.basename(bild.dateiname) === bild.dateiname) {
-      const filePath = path.join(uploadDir, bild.dateiname);
-
-      try {
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      } catch (fileError) {
-        console.error(
-          "Bilddatei konnte nicht gelöscht werden:",
-          fileError.message
-        );
-      }
+    // Bild zuerst aus ImageKit entfernen
+    if (bild.imagekit_file_id) {
+      await imagekit.files.delete(bild.imagekit_file_id);
     }
+
+    // Danach Datenbankeintrag entfernen
+    await pool.query(
+      "DELETE FROM galerie WHERE id = ?",
+      [id]
+    );
 
     return res.status(200).json({
       message: "Bild wurde erfolgreich gelöscht."
     });
+
   } catch (error) {
     console.error("Fehler beim Löschen:", error);
 
