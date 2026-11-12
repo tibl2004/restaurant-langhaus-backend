@@ -1,28 +1,40 @@
+
 const mysql = require("mysql2");
 
-// Pool erstellen
+// ==========================================
+// MYSQL CONNECTION POOL
+// ==========================================
+
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_DBNAME,
-  port: process.env.DB_PORT, // Port falls abweichend
+  port: Number(process.env.DB_PORT) || 3306,
+
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0,
+  queueLimit: 0
 });
 
-// Verbindung testen
+// ==========================================
+// VERBINDUNG TESTEN
+// ==========================================
+
 pool.getConnection((err, conn) => {
   if (err) {
     console.error("❌ Fehler bei DB-Verbindung:", err.message);
-  } else {
-    console.log("✅ Mit Datenbank verbunden");
-    conn.release();
+    return;
   }
+
+  console.log("✅ Mit Datenbank verbunden");
+  conn.release();
 });
 
-// Keep-Alive Ping alle 5 Minuten
+// ==========================================
+// KEEP-ALIVE PING ALLE 5 MINUTEN
+// ==========================================
+
 setInterval(() => {
   pool.query("SELECT 1", (err) => {
     if (err) {
@@ -31,6 +43,10 @@ setInterval(() => {
       console.log("🔄 DB Keep-Alive erfolgreich");
     }
   });
-}, 5 * 60 * 1000); // 5 Minuten
+}, 5 * 60 * 1000);
+
+// ==========================================
+// PROMISE POOL EXPORTIEREN
+// ==========================================
 
 module.exports = pool.promise();
