@@ -1,5 +1,6 @@
 const pool = require("../database/index");
 const jwt = require("jsonwebtoken");
+const generateCardPDF = require("../utils/generateCardPDF");
 
 
 const authenticateToken = (req, res, next) => {
@@ -169,6 +170,40 @@ const menuController = {
     const { itemId } = req.params;
     await pool.query(`DELETE FROM menu_item WHERE id = ?`, [itemId]);
     res.json({ success: true });
+  },
+
+  /* =====================================================
+     PDF AUS AKTUELLEN DATEN GENERIEREN
+  ===================================================== */
+  generatePdfForCard: async (card) => {
+    if (!card || !card.id) throw new Error("Ungültige Speisekarte");
+
+    const [categories] = await pool.query(
+      `SELECT * FROM menu_category WHERE menu_card_id = ? ORDER BY id`,
+      [card.id]
+    );
+
+    const categoriesWithItems = [];
+    for (const category of categories) {
+      const [items] = await pool.query(
+        `SELECT * FROM menu_item WHERE category_id = ? ORDER BY nummer`,
+        [category.id]
+      );
+
+      categoriesWithItems.push({
+        name: category.name,
+        items: items.map((item) => ({
+          title: item.name,
+          description: item.zutaten || "",
+          price: item.preis
+        }))
+      });
+    }
+
+    return generateCardPDF(card.id, card.name, categoriesWithItems, {
+      footerText: "RESTAURANT LANGHAUS",
+      subtitle: "RESTAURANT & GENUSS"
+    });
   },
 
   /* =====================================================
