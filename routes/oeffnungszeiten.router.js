@@ -1,28 +1,33 @@
 const express = require("express");
 const router = express.Router();
-const oeffnungszeitenController = require("../controller/oeffnungszeiten.controller");
 
-// ----------------------------------------------------------
-// 🔓 ÖFFENTLICH: Öffnungszeiten anzeigen (wie Home)
-// KEIN TOKEN NÖTIG – damit Website sie laden kann
-// ----------------------------------------------------------
-router.get("/", oeffnungszeitenController.getOeffnungszeiten);
+const controller = require("../controller/oeffnungszeiten.controller");
 
-// ----------------------------------------------------------
-// 🔒 ADMIN-BEREICH
-// Token-Middleware für alle folgenden Routen
-// ----------------------------------------------------------
+// Öffentliche Route
+router.get(
+  "/",
+  controller.getOeffnungszeiten
+);
 
-// 🔹 Neue Öffnungszeit anlegen ODER aktualisieren
-router.post("/", oeffnungszeitenController.addZeitblock);
-// 🔹 PUT: Zeitblock updaten
-router.put("/:id", oeffnungszeitenController.updateZeitblock);
+// Geschützte Admin-Routen
+router.get(
+  "/",
+  ...controller.getOeffzeitenForEdit
+);
 
-// 🔹 GET: Alle Öffnungszeiten für Bearbeiten (unkomprimiert pro Kategorie)
-router.get("/edit", oeffnungszeitenController.getOeffzeitenForEdit);
+router.put(
+  "/:id",
+  ...controller.updateZeitblock
+);
 
+router.post(
+  "/",
+  ...controller.addZeitblock
+);
 
-// 🔹 Öffnungszeit löschen
-router.delete("/:id", oeffnungszeitenController.deleteZeitblock);
+router.delete(
+  "/:id",
+  ...controller.deleteZeitblock
+);
 
 module.exports = router;

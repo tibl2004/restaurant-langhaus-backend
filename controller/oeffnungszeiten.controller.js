@@ -1,4 +1,3 @@
-
 const pool = require("../database/index");
 const authenticateToken = require("../middleware/auth");
 const requireAdmin = authenticateToken.requireAdmin;
@@ -18,15 +17,13 @@ const WOCHEN_ORDER = [
 ];
 
 // ======================================
-// HELPER
+// HILFSFUNKTIONEN
 // ======================================
 
-// Wochentag prüfen
 const isValidDay = (day) => {
   return WOCHEN_ORDER.includes(day);
 };
 
-// Zeitformat prüfen
 const isValidTime = (time) => {
   if (time === null || time === "") {
     return true;
@@ -38,19 +35,17 @@ const isValidTime = (time) => {
   );
 };
 
-// Zeit formatieren
 const formatTime = (time) => {
   if (!time) return null;
 
   return String(time).slice(0, 5);
 };
 
-// Kategorie normalisieren
 const normalizeCategory = (category) => {
   if (
     category === undefined ||
     category === null ||
-    category.trim() === ""
+    (typeof category === "string" && category.trim() === "")
   ) {
     return null;
   }
@@ -58,8 +53,12 @@ const normalizeCategory = (category) => {
   return category.trim();
 };
 
-// Eingaben für Zeitblöcke prüfen
-const validateTimeBlock = (wochentag, von, bis, kategorie) => {
+const validateTimeBlock = (
+  wochentag,
+  von,
+  bis,
+  kategorie
+) => {
   if (!isValidDay(wochentag)) {
     return "Ungültiger Wochentag.";
   }
@@ -72,14 +71,16 @@ const validateTimeBlock = (wochentag, von, bis, kategorie) => {
     return "Von und Bis müssen gemeinsam angegeben werden.";
   }
 
-  if (typeof kategorie === "string" && kategorie.length > 100) {
+  if (
+    typeof kategorie === "string" &&
+    kategorie.length > 100
+  ) {
     return "Die Kategorie darf maximal 100 Zeichen lang sein.";
   }
 
   return null;
 };
 
-// Wochentage zusammenfassen
 const compressDays = (days) => {
   const sorted = [...new Set(days)].sort(
     (a, b) =>
@@ -126,7 +127,7 @@ const compressDays = (days) => {
 const oeffnungszeitenController = {
 
   // ====================================
-  // PUBLIC: ÖFFNUNGSZEITEN ABRUFEN
+  // ÖFFENTLICHE ÖFFNUNGSZEITEN ABRUFEN
   // ====================================
 
   getOeffnungszeiten: async (req, res) => {
@@ -142,9 +143,10 @@ const oeffnungszeitenController = {
 
       const grouped = {};
 
-      // Daten nach Kategorie und Wochentag gruppieren
       for (const row of rows) {
-        const category = row.kategorie?.trim() || "__DEFAULT__";
+        const category =
+          row.kategorie?.trim() || "__DEFAULT__";
+
         const day = row.wochentag;
 
         if (!grouped[category]) {
@@ -165,12 +167,10 @@ const oeffnungszeitenController = {
 
       const output = [];
 
-      // Kategorien verarbeiten
       for (const category of Object.keys(grouped)) {
         const days = grouped[category];
         const patterns = {};
 
-        // Gleiche Öffnungszeiten zusammenfassen
         for (const day of WOCHEN_ORDER) {
           if (!days[day]) continue;
 
@@ -221,7 +221,7 @@ const oeffnungszeitenController = {
   },
 
   // ====================================
-  // ADMIN: ALLE DATEN ZUM BEARBEITEN
+  // ADMIN: ALLE ZEITBLÖCKE ABRUFEN
   // ====================================
 
   getOeffzeitenForEdit: [
@@ -242,13 +242,18 @@ const oeffnungszeitenController = {
         const grouped = {};
 
         for (const row of rows) {
-          const category = row.kategorie?.trim() || "__DEFAULT__";
+          const category =
+            row.kategorie?.trim() || "__DEFAULT__";
 
           if (!grouped[category]) {
             grouped[category] = [];
           }
 
-          grouped[category].push(row);
+          grouped[category].push({
+            ...row,
+            von: formatTime(row.von),
+            bis: formatTime(row.bis)
+          });
         }
 
         return res.status(200).json(grouped);
@@ -295,7 +300,18 @@ const oeffnungszeitenController = {
         const old = rows[0];
         const body = req.body || {};
 
-        const wochentag = body.wochentag ?? old.wochentag;
+        if (
+          body.kategorie !== undefined &&
+          body.kategorie !== null &&
+          typeof body.kategorie !== "string"
+        ) {
+          return res.status(400).json({
+            error: "Ungültige Kategorie."
+          });
+        }
+
+        const wochentag =
+          body.wochentag ?? old.wochentag;
 
         const von = body.von === undefined
           ? formatTime(old.von)
@@ -308,16 +324,6 @@ const oeffnungszeitenController = {
         const kategorie = body.kategorie === undefined
           ? old.kategorie
           : normalizeCategory(body.kategorie);
-
-        if (
-          body.kategorie !== undefined &&
-          body.kategorie !== null &&
-          typeof body.kategorie !== "string"
-        ) {
-          return res.status(400).json({
-            error: "Ungültige Kategorie."
-          });
-        }
 
         const validationError = validateTimeBlock(
           wochentag,
@@ -381,9 +387,6 @@ const oeffnungszeitenController = {
           kategorie
         } = body;
 
-        const newVon = von || null;
-        const newBis = bis || null;
-
         if (
           kategorie !== undefined &&
           kategorie !== null &&
@@ -394,6 +397,8 @@ const oeffnungszeitenController = {
           });
         }
 
+        const newVon = von || null;
+        const newBis = bis || null;
         const newCategory = normalizeCategory(kategorie);
 
         const validationError = validateTimeBlock(
