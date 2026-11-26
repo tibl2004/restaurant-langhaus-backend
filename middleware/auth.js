@@ -1,27 +1,51 @@
+
 const jwt = require("jsonwebtoken");
 
-module.exports = (req, res, next) => {
+// ======================================
+// AUTHENTICATION
+// ======================================
+
+const authenticateToken = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
-      return res.status(401).json({ error: "Kein Token vorhanden" });
+      return res.status(401).json({
+        error: "Kein Token vorhanden."
+      });
     }
 
-    // 🔥 unterstützt: "Bearer token" ODER nur token
+    // Bearer Token oder direktes Token
     let token = authHeader;
 
     if (authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
+      token = authHeader.substring(7);
     }
 
-    if (!token) {
-      return res.status(401).json({ error: "Token fehlt" });
+    if (!token || token.trim() === "") {
+      return res.status(401).json({
+        error: "Token fehlt."
+      });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // JWT überprüfen
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET,
+      {
+        issuer: "restaurant-backend",
+        audience: "admin"
+      }
+    );
 
-    req.user = decoded;
+    // Benutzerinformationen speichern
+    req.user = {
+      id: decoded.id,
+      username: decoded.username,
+      userTypes: Array.isArray(decoded.userTypes)
+        ? decoded.userTypes
+        : []
+    };
 
     next();
 
@@ -29,7 +53,36 @@ module.exports = (req, res, next) => {
     console.error("AUTH ERROR:", err.message);
 
     return res.status(403).json({
-      error: "Token ungültig"
+      error: "Token ungültig oder abgelaufen."
     });
   }
 };
+
+// ======================================
+// ADMIN AUTHORIZATION
+// ======================================
+
+const requireAdmin = (req, res, next) => {
+
+  if (!req.user) {
+    return res.status(401).json({
+      error: "Nicht authentifiziert."
+    });
+  }
+
+  if (!req.user.userTypes.includes("admin")) {
+    return res.status(403).json({
+      error: "Keine Admin-Berechtigung."
+    });
+  }
+
+  next();
+};
+
+// ======================================
+// EXPORTS
+// ======================================
+
+module.exports = authenticateToken;
+module.exports.authenticateToken = authenticateToken;
+module.exports.requireAdmin = requireAdmin;
