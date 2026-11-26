@@ -1,43 +1,5 @@
 
 const pool = require("../database/index");
-const ImageKit = require("@imagekit/nodejs");
-
-// ==========================================
-// IMAGEKIT KONFIGURATION
-// ==========================================
-
-if (!process.env.IMAGEKIT_PRIVATE_KEY || !process.env.IMAGEKIT_PUBLIC_KEY) {
-  throw new Error("ImageKit API-Schlüssel fehlen in der .env-Datei.");
-}
-
-const imagekit = new ImageKit({
-  privateKey: process.env.IMAGEKIT_PRIVATE_KEY
-});
-
-const PUBLIC_KEY = process.env.IMAGEKIT_PUBLIC_KEY;
-
-// ==========================================
-// AUTHENTIFIZIERUNG FÜR REACT
-// GET /api/galerie/upload-auth
-// ==========================================
-
-exports.getUploadAuth = async (req, res) => {
-  try {
-    const authParams = imagekit.helper.getAuthenticationParameters();
-
-    return res.status(200).json({
-      ...authParams,
-      publicKey: PUBLIC_KEY
-    });
-
-  } catch (error) {
-    console.error("ImageKit Auth-Fehler:", error);
-
-    return res.status(500).json({
-      message: "Upload-Authentifizierung fehlgeschlagen."
-    });
-  }
-};
 
 // ==========================================
 // GALERIE ABRUFEN
@@ -47,20 +9,12 @@ exports.getUploadAuth = async (req, res) => {
 exports.getGalerie = async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, bild_url, dateiname, imagekit_file_id, created_at
+      `SELECT id, bild_url, dateiname, created_at
        FROM galerie
        ORDER BY id DESC`
     );
 
-    return res.status(200).json(
-      rows.map((bild) => ({
-        id: bild.id,
-        bild_url: bild.bild_url,
-        dateiname: bild.dateiname,
-        imagekit_file_id: bild.imagekit_file_id,
-        created_at: bild.created_at
-      }))
-    );
+    return res.status(200).json(rows);
 
   } catch (error) {
     console.error("Fehler beim Abrufen der Galerie:", error);
@@ -71,17 +25,18 @@ exports.getGalerie = async (req, res) => {
   }
 };
 
+
 // ==========================================
 // BILDER IN MYSQL SPEICHERN
 // POST /api/galerie
 //
 // Erwartet JSON:
+//
 // {
 //   "bilder": [
 //     {
-//       "fileId": "...",
-//       "url": "...",
-//       "name": "..."
+//       "url": "https://example.com/bild.jpg",
+//       "name": "bild.jpg"
 //     }
 //   ]
 // }
@@ -93,7 +48,7 @@ exports.uploadGalerie = async (req, res) => {
   try {
     if (!Array.isArray(bilder) || bilder.length === 0) {
       return res.status(400).json({
-        message: "Bitte mindestens ein Bild hochladen."
+        message: "Bitte mindestens einen Bildlink angeben."
       });
     }
 
@@ -105,8 +60,6 @@ exports.uploadGalerie = async (req, res) => {
 
     for (const bild of bilder) {
       if (
-        !bild.fileId ||
-        typeof bild.fileId !== "string" ||
         !bild.url ||
         typeof bild.url !== "string" ||
         !bild.name ||
@@ -117,17 +70,32 @@ exports.uploadGalerie = async (req, res) => {
         });
       }
 
-      if (
-        !bild.url.startsWith(process.env.IMAGEKIT_URL_ENDPOINT + "/")
-      ) {
+      // Nur gültige HTTP- und HTTPS-Links erlauben
+      let parsedUrl;
+
+      try {
+        parsedUrl = new URL(bild.url);
+      } catch {
         return res.status(400).json({
-          message: "Ungültige ImageKit-Bildadresse."
+          message: "Ungültiger Bildlink."
         });
       }
 
-      if (!/\.(jpg|jpeg|png|webp|gif)$/i.test(bild.name)) {
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
         return res.status(400).json({
-          message: "Ungültiger Bilddateiname."
+          message: "Nur HTTP- und HTTPS-Bildlinks sind erlaubt."
+        });
+      }
+
+      if (!/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(parsedUrl.pathname + parsedUrl.search)) {
+        return res.status(400).json({
+          message: "Ungültiger Bildlink. Erlaubt sind JPG, JPEG, PNG, WEBP und GIF."
+        });
+      }
+
+      if (bild.name.length > 255) {
+        return res.status(400).json({
+          message: "Der Dateiname ist zu lang."
         });
       }
     }
@@ -142,20 +110,18 @@ exports.uploadGalerie = async (req, res) => {
       for (const bild of bilder) {
         const [result] = await connection.query(
           `INSERT INTO galerie
-           (bild_url, dateiname, imagekit_file_id)
-           VALUES (?, ?, ?)`,
+           (bild_url, dateiname)
+           VALUES (?, ?)`,
           [
             bild.url,
-            bild.name,
-            bild.fileId
+            bild.name
           ]
         );
 
         insertedImages.push({
           id: result.insertId,
           bild_url: bild.url,
-          dateiname: bild.name,
-          imagekit_file_id: bild.fileId
+          dateiname: bild.name
         });
       }
 
@@ -183,6 +149,7 @@ exports.uploadGalerie = async (req, res) => {
   }
 };
 
+
 // ==========================================
 // BILD LÖSCHEN
 // DELETE /api/galerie/:id
@@ -198,32 +165,16 @@ exports.deleteGalerie = async (req, res) => {
       });
     }
 
-    const [rows] = await pool.query(
-      `SELECT id, imagekit_file_id
-       FROM galerie
-       WHERE id = ?
-       LIMIT 1`,
+    const [result] = await pool.query(
+      "DELETE FROM galerie WHERE id = ?",
       [id]
     );
 
-    if (rows.length === 0) {
+    if (result.affectedRows === 0) {
       return res.status(404).json({
         message: "Bild wurde nicht gefunden."
       });
     }
-
-    const bild = rows[0];
-
-    // Bild zuerst aus ImageKit entfernen
-    if (bild.imagekit_file_id) {
-      await imagekit.files.delete(bild.imagekit_file_id);
-    }
-
-    // Danach Datenbankeintrag entfernen
-    await pool.query(
-      "DELETE FROM galerie WHERE id = ?",
-      [id]
-    );
 
     return res.status(200).json({
       message: "Bild wurde erfolgreich gelöscht."
